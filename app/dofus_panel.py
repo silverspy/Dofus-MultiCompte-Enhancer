@@ -1202,6 +1202,9 @@ class DofusPanel:
             cell = PlayerCell(self.content, self, player)
             cell.pack(side="left" if horizontal else "top", padx=0, pady=0)
             self.cells.append(cell)
+        foreground = int(user32.GetForegroundWindow() or 0)
+        if not self.synchronize_active_player(foreground, force_refresh=True):
+            self.refresh_cells()
         self.root.update_idletasks()
         self.ensure_visible()
         self.root.after_idle(lambda: apply_rounded_window(self.root, 6))
@@ -1537,6 +1540,27 @@ class DofusPanel:
     def refresh_cells(self) -> None:
         for cell in self.cells:
             cell.refresh(cell.player.handle is not None and cell.player.handle == self.active_handle)
+
+    def synchronize_active_player(
+        self, foreground: int, *, force_refresh: bool = False
+    ) -> bool:
+        """Synchronise la sélection avec la fenêtre Dofus au premier plan."""
+        matching_index = next(
+            (
+                index
+                for index, player in enumerate(self.players)
+                if player.handle is not None and player.handle == foreground
+            ),
+            None,
+        )
+        if matching_index is None:
+            return False
+        changed = self.active_handle != foreground or self.selected_index != matching_index
+        self.active_handle = foreground
+        self.selected_index = matching_index
+        if changed or force_refresh:
+            self.refresh_cells()
+        return True
 
     def set_status(self, text: str, color: str = MUTED) -> None:
         if self.status_popup is None or not self.status_popup.winfo_exists():
@@ -2051,13 +2075,8 @@ class DofusPanel:
             self.pending_activation_handle is None
             and not self.broadcast_replay_active.is_set()
             and foreground != self.active_handle
-            and any(player.handle == foreground for player in self.players)
         ):
-            self.active_handle = foreground
-            self.selected_index = next(
-                index for index, player in enumerate(self.players) if player.handle == foreground
-            )
-            self.refresh_cells()
+            self.synchronize_active_player(foreground)
 
         now = time.monotonic()
         if now >= self.next_window_resolve:

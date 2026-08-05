@@ -77,3 +77,35 @@ def test_required_assets_are_present() -> None:
     ]
 
     assert all(path.is_file() for path in required)
+
+
+def test_active_player_highlight_is_forced_after_cells_are_rebuilt() -> None:
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.players = [
+        dofus_panel.Player("Leader", 101, handle=101),
+        dofus_panel.Player("Second", 202, handle=202),
+    ]
+    panel.active_handle = 101
+    panel.selected_index = 0
+    refreshes: list[bool] = []
+    panel.refresh_cells = lambda: refreshes.append(True)
+
+    synchronized = panel.synchronize_active_player(101, force_refresh=True)
+
+    assert synchronized is True
+    assert panel.active_handle == 101
+    assert panel.selected_index == 0
+    assert refreshes == [True]
+
+
+def test_active_player_sync_ignores_unrelated_foreground_window() -> None:
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.players = [dofus_panel.Player("Leader", 101, handle=101)]
+    panel.active_handle = 101
+    panel.selected_index = 0
+    refreshes: list[bool] = []
+    panel.refresh_cells = lambda: refreshes.append(True)
+
+    assert panel.synchronize_active_player(999, force_refresh=True) is False
+    assert panel.active_handle == 101
+    assert refreshes == []
