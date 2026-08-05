@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_readme_screenshot_assets_exist() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     expected_assets = (
+        "docs/images/dofus-integration.jpg",
         "docs/images/toolbar-vertical.png",
         "docs/images/settings-window.png",
     )
@@ -14,6 +15,9 @@ def test_readme_screenshot_assets_exist() -> None:
     for relative_path in expected_assets:
         assert relative_path in readme
         assert (ROOT / relative_path).is_file()
+
+    assert readme.index("## Français") < readme.index("## English")
+    assert "## Regression coverage" not in readme
 
 
 def test_tagged_builds_create_a_release_from_the_executable() -> None:
