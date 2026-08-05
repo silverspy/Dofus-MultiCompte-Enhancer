@@ -10,9 +10,29 @@ import dofus_panel
 
 
 def test_default_configuration_contains_current_controls() -> None:
+    assert dofus_panel.DEFAULT_CONFIG["language"] == "fr"
     assert dofus_panel.DEFAULT_CONFIG["play_button_enabled"] is True
     assert dofus_panel.DEFAULT_CONFIG["orientation"] in {"vertical", "horizontal"}
     assert 0.70 <= dofus_panel.DEFAULT_CONFIG["ui_scale"] <= 1.50
+
+
+def test_ui_translation_supports_french_and_english() -> None:
+    assert dofus_panel.translate("fr", "settings") == "PARAMÈTRES"
+    assert dofus_panel.translate("en", "settings") == "SETTINGS"
+    assert (
+        dofus_panel.translate("en", "replication_targets", count=3)
+        == "REPLICATION ENABLED · 3 TARGETS"
+    )
+    assert dofus_panel.translate("unknown", "save") == "ENREGISTRER"
+
+
+def test_english_mode_translates_input_names_without_changing_bindings() -> None:
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.config_data = {"language": "en"}
+
+    assert panel.display_input_name("SOURIS GAUCHE") == "LEFT MOUSE"
+    assert panel.display_input_name("MÉDIA SUIVANT") == "NEXT TRACK"
+    assert panel.display_input_name("TOUCHE 0xFE") == "KEY 0xFE"
 
 
 def test_extended_keyboard_names_remain_stable() -> None:

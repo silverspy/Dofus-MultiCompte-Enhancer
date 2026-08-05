@@ -75,6 +75,7 @@ CLASS_NAMES = {
 }
 
 DEFAULT_CONFIG = {
+    "language": "fr",
     "orientation": "vertical",
     "opacity": 0.94,
     "position_locked": False,
@@ -89,6 +90,122 @@ DEFAULT_CONFIG = {
     "x": 24,
     "y": 220,
 }
+
+TRANSLATIONS = {
+    "fr": {
+        "settings": "PARAMÈTRES",
+        "layout": "DISPOSITION",
+        "language": "LANGUE",
+        "previous_key": "TOUCHE PRÉCÉDENTE",
+        "next_key": "TOUCHE SUIVANTE",
+        "replication_mode": "MODE RÉPLICATION",
+        "group_leader": "CHEF DU GROUPE",
+        "lock": "VERROUILLER",
+        "position": "Position",
+        "icons": "Icônes",
+        "play_button": "BOUTON PLAY",
+        "enabled": "Activé",
+        "scale": "ÉCHELLE",
+        "opacity": "TRANSPARENCE",
+        "save": "ENREGISTRER",
+        "press_input": "APPUYEZ…",
+        "input_prompt": "CLAVIER, SOURIS OU MOLETTE…",
+        "offline": "{player} hors ligne",
+        "no_window": "AUCUNE FENÊTRE",
+        "replication_no_target": "RÉPLICATION ACTIVÉE · AUCUNE CIBLE",
+        "replication_targets": "RÉPLICATION ACTIVÉE · {count} CIBLES",
+        "replication_disabled": "RÉPLICATION DÉSACTIVÉE",
+        "action_running": "ACTION EN COURS",
+        "starting": "LANCEMENT…",
+        "listener_unavailable": "ÉCOUTEUR INDISPONIBLE: {devices}",
+        "replication_error": "RÉPLICATION: {error}",
+        "done": "TERMINÉ",
+        "error": "ERREUR",
+    },
+    "en": {
+        "settings": "SETTINGS",
+        "layout": "LAYOUT",
+        "language": "LANGUAGE",
+        "previous_key": "PREVIOUS WINDOW",
+        "next_key": "NEXT WINDOW",
+        "replication_mode": "REPLICATION MODE",
+        "group_leader": "GROUP LEADER",
+        "lock": "LOCK",
+        "position": "Position",
+        "icons": "Icons",
+        "play_button": "PLAY BUTTON",
+        "enabled": "Enabled",
+        "scale": "SCALE",
+        "opacity": "OPACITY",
+        "save": "SAVE",
+        "press_input": "PRESS A KEY…",
+        "input_prompt": "KEYBOARD, MOUSE, OR WHEEL…",
+        "offline": "{player} offline",
+        "no_window": "NO WINDOW",
+        "replication_no_target": "REPLICATION ENABLED · NO TARGET",
+        "replication_targets": "REPLICATION ENABLED · {count} TARGETS",
+        "replication_disabled": "REPLICATION DISABLED",
+        "action_running": "ACTION IN PROGRESS",
+        "starting": "STARTING…",
+        "listener_unavailable": "INPUT LISTENER UNAVAILABLE: {devices}",
+        "replication_error": "REPLICATION: {error}",
+        "done": "DONE",
+        "error": "ERROR",
+    },
+}
+
+LANGUAGE_LABELS = {"fr": "Français", "en": "English"}
+INPUT_NAME_EN = {
+    "CLAVIER": "KEYBOARD",
+    "SOURIS": "MOUSE",
+    "SOURIS GAUCHE": "LEFT MOUSE",
+    "SOURIS DROITE": "RIGHT MOUSE",
+    "SOURIS MILIEU": "MIDDLE MOUSE",
+    "SOURIS 4": "MOUSE 4",
+    "SOURIS 5": "MOUSE 5",
+    "MOLETTE HAUT": "WHEEL UP",
+    "MOLETTE BAS": "WHEEL DOWN",
+    "MOLETTE DROITE": "WHEEL RIGHT",
+    "MOLETTE GAUCHE": "WHEEL LEFT",
+    "RETOUR ARRIÈRE": "BACKSPACE",
+    "ENTRÉE": "ENTER",
+    "MAJ": "SHIFT",
+    "VERR MAJ": "CAPS LOCK",
+    "ESPACE": "SPACE",
+    "FIN": "END",
+    "DÉBUT": "HOME",
+    "GAUCHE": "LEFT",
+    "HAUT": "UP",
+    "DROITE": "RIGHT",
+    "BAS": "DOWN",
+    "IMPR ÉCRAN": "PRINT SCREEN",
+    "SUPPR": "DELETE",
+    "WINDOWS GAUCHE": "LEFT WINDOWS",
+    "WINDOWS DROITE": "RIGHT WINDOWS",
+    "VERR NUM": "NUM LOCK",
+    "ARRÊT DÉFIL": "SCROLL LOCK",
+    "MAJ GAUCHE": "LEFT SHIFT",
+    "MAJ DROITE": "RIGHT SHIFT",
+    "CTRL GAUCHE": "LEFT CTRL",
+    "CTRL DROITE": "RIGHT CTRL",
+    "ALT GAUCHE": "LEFT ALT",
+    "ALT DROITE": "RIGHT ALT",
+    "NAV PRÉCÉDENT": "BROWSER BACK",
+    "NAV SUIVANT": "BROWSER FORWARD",
+    "NAV ACTUALISER": "BROWSER REFRESH",
+    "MUET": "MUTE",
+    "MÉDIA SUIVANT": "NEXT TRACK",
+    "MÉDIA PRÉCÉDENT": "PREVIOUS TRACK",
+    "MÉDIA STOP": "STOP MEDIA",
+    "MÉDIA PLAY/PAUSE": "PLAY/PAUSE MEDIA",
+}
+
+
+def translate(language: str, key: str, **values: object) -> str:
+    """Return a localized UI string and fall back to French for unknown locales."""
+    locale = language if language in TRANSLATIONS else "fr"
+    template = TRANSLATIONS[locale].get(key, TRANSLATIONS["fr"].get(key, key))
+    return template.format(**values)
 
 WH_KEYBOARD_LL = 13
 WH_MOUSE_LL = 14
@@ -1066,6 +1183,20 @@ class DofusPanel:
     def ui_scale(self) -> float:
         return min(1.50, max(0.70, float(self.config_data.get("ui_scale", 1.0))))
 
+    def language(self) -> str:
+        language = str(self.config_data.get("language", "fr"))
+        return language if language in TRANSLATIONS else "fr"
+
+    def t(self, key: str, **values: object) -> str:
+        return translate(self.language(), key, **values)
+
+    def display_input_name(self, name: str) -> str:
+        if self.language() == "en":
+            if name.startswith("TOUCHE 0x"):
+                return name.replace("TOUCHE", "KEY", 1)
+            return INPUT_NAME_EN.get(name, name)
+        return name
+
     def px(self, value: int) -> int:
         return max(1, round(value * self.ui_scale()))
 
@@ -1281,7 +1412,7 @@ class DofusPanel:
 
     def activate_player(self, player: Player) -> None:
         if player.handle is None:
-            self.set_status(f"{player.pseudo} hors ligne", RED)
+            self.set_status(self.t("offline", player=player.pseudo), RED)
             return
         self.activation_generation += 1
         generation = self.activation_generation
@@ -1325,7 +1456,7 @@ class DofusPanel:
     def navigate(self, delta: int) -> None:
         online = [index for index, player in enumerate(self.players) if player.handle]
         if not online:
-            self.set_status("AUCUNE FENÊTRE", RED)
+            self.set_status(self.t("no_window"), RED)
             return
         if self.selected_index not in online:
             target_index = online[0]
@@ -1348,13 +1479,13 @@ class DofusPanel:
         self.shell.configure(highlightbackground=BORDER)
         online_count = sum(player.handle is not None for player in self.players)
         if enabled and online_count < 2:
-            message = "RÉPLICATION ACTIVÉE · AUCUNE CIBLE"
+            message = self.t("replication_no_target")
             color = RED
         elif enabled:
-            message = f"RÉPLICATION ACTIVÉE · {online_count - 1} CIBLES"
+            message = self.t("replication_targets", count=online_count - 1)
             color = LIME
         else:
-            message = "RÉPLICATION DÉSACTIVÉE"
+            message = self.t("replication_disabled")
             color = MUTED
         self.set_status(message, color)
 
@@ -1585,9 +1716,9 @@ class DofusPanel:
 
     def run_workflow(self) -> None:
         if self.workflow is not None and self.workflow.poll() is None:
-            self.set_status("ACTION EN COURS", GOLD)
+            self.set_status(self.t("action_running"), GOLD)
             return
-        self.set_status("LANCEMENT…", GOLD)
+        self.set_status(self.t("starting"), GOLD)
         workflow_arguments = [
             "--output", str(PLAYERS_PATH),
             "--assets-dir", str(ASSETS_DIR),
@@ -1625,7 +1756,7 @@ class DofusPanel:
             self.settings_dialog.focus_force()
             return
         dialog_width = 318
-        dialog_height = 435
+        dialog_height = 472
         desired_x = self.root.winfo_x() + 35
         desired_y = self.root.winfo_y() + 35
         work_area = monitor_work_area(self.root.winfo_id())
@@ -1662,7 +1793,7 @@ class DofusPanel:
         header.grid(row=0, column=0, columnspan=2, sticky="ew")
         header.grid_propagate(False)
         tk.Label(
-            header, text="⚙  PARAMÈTRES", bg=PANEL_HOVER, fg=TEXT,
+            header, text=f"⚙  {self.t('settings')}", bg=PANEL_HOVER, fg=TEXT,
             font=("Segoe UI Semibold", 8), padx=10,
         ).pack(side="left", fill="y")
         close_app = tk.Button(
@@ -1702,6 +1833,7 @@ class DofusPanel:
         )
 
         orientation = tk.StringVar(value=str(self.config_data["orientation"]))
+        language = tk.StringVar(value=LANGUAGE_LABELS[self.language()])
         previous = tk.StringVar(value=str(self.config_data["previous_key"]))
         following = tk.StringVar(value=str(self.config_data["next_key"]))
         broadcast = tk.StringVar(value=str(self.config_data["broadcast_key"]))
@@ -1721,8 +1853,9 @@ class DofusPanel:
         original_ui_scale = self.ui_scale()
 
         fields = [
-            (1, "Disposition", orientation, ["vertical", "horizontal"]),
-            (5, "Chef du groupe", leader, [player.pseudo for player in self.players] or ["Silvcra"]),
+            (1, self.t("layout"), orientation, ["vertical", "horizontal"]),
+            (2, self.t("language"), language, list(LANGUAGE_LABELS.values())),
+            (6, self.t("group_leader"), leader, [player.pseudo for player in self.players] or ["Silvcra"]),
         ]
         for row, label, variable, values in fields:
             tk.Label(
@@ -1744,7 +1877,7 @@ class DofusPanel:
                 variable.set(value)
             if isinstance(button, RoundedSettingsButton) and isinstance(variable, tk.StringVar):
                 button.set_state(
-                    text=variable.get(), fill=CELL_FILL, foreground=TEXT,
+                    text=self.display_input_name(variable.get()), fill=CELL_FILL, foreground=TEXT,
                     hover_fill=CELL_HOVER,
                 )
             capture["variable"] = None
@@ -1759,7 +1892,7 @@ class DofusPanel:
             capture["variable"] = variable
             capture["button"] = button
             button.set_state(
-                text="APPUYEZ…", fill=GOLD, foreground=BG_DEEP,
+                text=self.t("press_input"), fill=GOLD, foreground=BG_DEEP,
                 hover_fill=GOLD,
             )
             self.capture_started_at = time.monotonic()
@@ -1769,7 +1902,7 @@ class DofusPanel:
 
             self.capture_input_handler = accept_input
             dialog.focus_force()
-            self.set_status("CLAVIER, SOURIS OU MOLETTE…", GOLD)
+            self.set_status(self.t("input_prompt"), GOLD)
 
         def capture_key(event: tk.Event) -> str | None:
             if capture["variable"] is not None:
@@ -1785,9 +1918,9 @@ class DofusPanel:
         dialog.bind("<KeyPress>", capture_key)
 
         for row, label, variable in (
-            (2, "Touche précédente", previous),
-            (3, "Touche suivante", following),
-            (4, "Mode réplication", broadcast),
+            (3, self.t("previous_key"), previous),
+            (4, self.t("next_key"), following),
+            (5, self.t("replication_mode"), broadcast),
         ):
             tk.Label(
                 dialog, text=label.upper(), bg=BG, fg=MUTED,
@@ -1796,41 +1929,41 @@ class DofusPanel:
                 row=row, column=0, padx=(12, 7), pady=7, sticky="w"
             )
             button = RoundedSettingsButton(
-                dialog, text=variable.get(), fill=CELL_FILL,
+                dialog, text=self.display_input_name(variable.get()), fill=CELL_FILL,
                 hover_fill=CELL_HOVER, outline=CELL_BORDER,
             )
             button.command = lambda item=variable, target=button: begin_capture(item, target)
             button.grid(row=row, column=1, padx=(5, 12), pady=7, sticky="ew")
 
         tk.Label(
-            dialog, text="VERROUILLER", bg=BG, fg=MUTED,
+            dialog, text=self.t("lock"), bg=BG, fg=MUTED,
             font=("Segoe UI Semibold", 8),
-        ).grid(row=6, column=0, padx=(12, 7), pady=7, sticky="w")
+        ).grid(row=7, column=0, padx=(12, 7), pady=7, sticky="w")
 
         lock_options = tk.Frame(dialog, bg=BG)
-        lock_options.grid(row=6, column=1, padx=(5, 12), pady=7, sticky="ew")
+        lock_options.grid(row=7, column=1, padx=(5, 12), pady=7, sticky="ew")
         lock_options.grid_columnconfigure(0, weight=1)
         lock_options.grid_columnconfigure(1, weight=1)
         for column, text, variable in (
-            (0, "Position", position_locked),
-            (1, "Icônes", drag_cells_locked),
+            (0, self.t("position"), position_locked),
+            (1, self.t("icons"), drag_cells_locked),
         ):
             DofusCheckBox(
                 lock_options, text=text, variable=variable,
             ).grid(row=0, column=column, sticky="w")
 
         tk.Label(
-            dialog, text="BOUTON PLAY", bg=BG, fg=MUTED,
-            font=("Segoe UI Semibold", 8),
-        ).grid(row=7, column=0, padx=(12, 7), pady=7, sticky="w")
-        DofusCheckBox(
-            dialog, text="Activé", variable=play_button_enabled,
-        ).grid(row=7, column=1, padx=(5, 12), pady=7, sticky="w")
-
-        tk.Label(
-            dialog, text="ÉCHELLE", bg=BG, fg=MUTED,
+            dialog, text=self.t("play_button"), bg=BG, fg=MUTED,
             font=("Segoe UI Semibold", 8),
         ).grid(row=8, column=0, padx=(12, 7), pady=7, sticky="w")
+        DofusCheckBox(
+            dialog, text=self.t("enabled"), variable=play_button_enabled,
+        ).grid(row=8, column=1, padx=(5, 12), pady=7, sticky="w")
+
+        tk.Label(
+            dialog, text=self.t("scale"), bg=BG, fg=MUTED,
+            font=("Segoe UI Semibold", 8),
+        ).grid(row=9, column=0, padx=(12, 7), pady=7, sticky="w")
 
         def preview_scale(value: str) -> None:
             self.config_data["ui_scale"] = min(1.50, max(0.70, float(value)))
@@ -1839,13 +1972,13 @@ class DofusPanel:
         DofusSlider(
             dialog, from_=0.70, to=1.50, resolution=0.05,
             variable=ui_scale, command=preview_scale,
-        ).grid(row=8, column=1, padx=(5, 12), pady=3, sticky="ew")
+        ).grid(row=9, column=1, padx=(5, 12), pady=3, sticky="ew")
 
         tk.Label(
-            dialog, text="TRANSPARENCE", bg=BG, fg=MUTED,
+            dialog, text=self.t("opacity"), bg=BG, fg=MUTED,
             font=("Segoe UI Semibold", 8),
         ).grid(
-            row=9, column=0, padx=(12, 7), pady=7, sticky="w"
+            row=10, column=0, padx=(12, 7), pady=7, sticky="w"
         )
         def preview_opacity(value: str) -> None:
             alpha = min(1.0, max(0.40, float(value)))
@@ -1855,7 +1988,7 @@ class DofusPanel:
         DofusSlider(
             dialog, from_=0.40, to=1.0, resolution=0.01,
             variable=opacity, command=preview_opacity,
-        ).grid(row=9, column=1, padx=(5, 12), pady=3, sticky="ew")
+        ).grid(row=10, column=1, padx=(5, 12), pady=3, sticky="ew")
 
         def apply_settings() -> None:
             if capture["button"] is not None:
@@ -1864,6 +1997,10 @@ class DofusPanel:
                 orientation=orientation.get(), previous_key=previous.get(),
                 next_key=following.get(), broadcast_key=broadcast.get(),
                 leader=leader.get(), opacity=opacity.get(),
+                language=next(
+                    code for code, label in LANGUAGE_LABELS.items()
+                    if label == language.get()
+                ),
                 position_locked=bool(position_locked.get()),
                 drag_cells_locked=bool(drag_cells_locked.get()),
                 play_button_enabled=bool(play_button_enabled.get()),
@@ -1875,12 +2012,12 @@ class DofusPanel:
             self.build()
 
         save_button = RoundedSettingsButton(
-            dialog, text="ENREGISTRER", command=apply_settings,
+            dialog, text=self.t("save"), command=apply_settings,
             fill=LIME_DARK, hover_fill="#8da329", outline="#5f7118",
             foreground=TEXT,
         )
         save_button.grid(
-            row=10, column=0, columnspan=2, padx=12, pady=(9, 11), sticky="ew"
+            row=11, column=0, columnspan=2, padx=12, pady=(9, 11), sticky="ew"
         )
 
 
@@ -2062,9 +2199,14 @@ class DofusPanel:
                     elif str(name) == str(self.config_data["next_key"]):
                         self.navigate(1)
                 elif event == "error":
-                    self.set_status(f"ÉCOUTEUR INDISPONIBLE: {', '.join(payload)}", RED)
+                    devices = ", ".join(
+                        self.display_input_name(str(device)) for device in payload
+                    )
+                    self.set_status(
+                        self.t("listener_unavailable", devices=devices), RED
+                    )
                 elif event == "broadcast_error":
-                    self.set_status(f"RÉPLICATION: {payload}", RED)
+                    self.set_status(self.t("replication_error", error=payload), RED)
         except queue.Empty:
             pass
 
@@ -2099,7 +2241,10 @@ class DofusPanel:
                 line = self.output_queue.get_nowait()
                 if line == "__DONE__":
                     code = self.workflow.poll() if self.workflow else 1
-                    self.set_status("TERMINÉ" if code == 0 else "ERREUR", LIME if code == 0 else RED)
+                    self.set_status(
+                        self.t("done") if code == 0 else self.t("error"),
+                        LIME if code == 0 else RED,
+                    )
                     self.build()
                 elif line:
                     self.set_status(line)
