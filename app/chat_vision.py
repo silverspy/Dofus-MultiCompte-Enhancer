@@ -1,7 +1,7 @@
-"""Détecte visuellement la barre de chat et y écrit une commande.
+"""Visually detect the chat input and type a command into it.
 
-Par sécurité, Entrée n'est pressée que si l'option --send est fournie.
-Déplacer la souris dans un coin de l'écran interrompt PyAutoGUI.
+For safety, Enter is pressed only when --send is provided. Moving the pointer
+to a screen corner triggers the PyAutoGUI fail-safe.
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ class INPUT(ctypes.Structure):
 
 
 try:
-    # Coordonnées physiques correctes sur les écrans avec mise à l'échelle.
+    # Use physical coordinates on displays with scaling enabled.
     user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 except (AttributeError, OSError):
     user32.SetProcessDPIAware()
@@ -129,7 +129,7 @@ class Detection:
 
 @dataclass(frozen=True)
 class CommandResult:
-    """Résultat structuré renvoyé par execute_chat_command."""
+    """Structured result returned by execute_chat_command."""
 
     window_title: str
     detection: Detection
@@ -139,16 +139,16 @@ class CommandResult:
 
 
 def detect_chat_bar(image_bgr: np.ndarray) -> Detection | None:
-    """Repère le voyant vert et valide la barre sombre située à sa gauche."""
+    """Locate the status light and validate the dark input bar to its left."""
     height, width = image_bgr.shape[:2]
     x0, x1 = int(width * 0.08), int(width * 0.30)
     y0 = max(0, height - int(height * 0.06))
     roi = image_bgr[y0:height, x0:x1]
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Le voyant peut être vert, orange ou rouge selon l'état du chat. Sa propriété
-    # stable est d'être petit, vif et saturé ; la barre sombre à gauche élimine
-    # ensuite les autres pixels colorés de l'interface.
+    # The indicator may be green, orange, or red depending on chat state. Its
+    # stable properties are its small size and high saturation; the dark bar to
+    # the left then filters out unrelated colored UI pixels.
     mask = cv2.inRange(hsv, np.array([0, 90, 110]), np.array([179, 255, 255]))
     count, _, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=4)
 
@@ -213,11 +213,11 @@ def list_matching_windows(title_prefix: str) -> list[tuple[int, str]]:
 def find_unique_window(title_prefix: str) -> tuple[int, str]:
     matches = list_matching_windows(title_prefix)
     if not matches:
-        raise RuntimeError(f"Aucune fenêtre dont le titre commence par {title_prefix!r}.")
+        raise RuntimeError(f"No window title starts with {title_prefix!r}.")
     if len(matches) != 1:
         titles = "\n  - ".join(title for _, title in matches)
         raise RuntimeError(
-            f"Plusieurs fenêtres commencent par {title_prefix!r} :\n  - {titles}"
+            f"Multiple window titles start with {title_prefix!r}:\n  - {titles}"
         )
     return matches[0]
 
@@ -241,7 +241,7 @@ def get_window_process_path(hwnd: int) -> Path | None:
 
 
 def list_windows_by_executable(executable_name: str) -> list[tuple[int, str]]:
-    """Retourne les grandes fenêtres visibles appartenant à un exécutable."""
+    """Return large visible windows owned by an executable."""
     matches: list[tuple[int, str]] = []
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
@@ -296,7 +296,7 @@ def activate_window(hwnd: int) -> None:
         user32.BringWindowToTop(hwnd)
         user32.SetForegroundWindow(hwnd)
     if user32.GetForegroundWindow() != hwnd:
-        raise RuntimeError("Windows a refusé de placer la fenêtre Dofus au premier plan.")
+        raise RuntimeError("Windows refused to bring the Dofus window to the foreground.")
 
 
 def escape_pressed() -> bool:
@@ -335,7 +335,7 @@ def click_and_type(screen_x: int, screen_y: int, text: str, send: bool) -> None:
     click_screen(screen_x, screen_y)
     time.sleep(0.15)
     if escape_pressed():
-        raise RuntimeError("Action annulée avec Échap après le clic.")
+        raise RuntimeError("Action cancelled with Escape after the click.")
     send_inputs(
         keyboard_event(VK_CONTROL),
         keyboard_event(ord("A")),
@@ -348,9 +348,9 @@ def click_and_type(screen_x: int, screen_y: int, text: str, send: bool) -> None:
 
 
 def click_screen(screen_x: int, screen_y: int) -> None:
-    """Clique à une coordonnée écran physique, avec Échap comme arrêt d'urgence."""
+    """Click physical screen coordinates, with Escape as an emergency stop."""
     if escape_pressed():
-        raise RuntimeError("Action annulée : la touche Échap est maintenue.")
+        raise RuntimeError("Action cancelled: Escape is being held.")
     if not user32.SetCursorPos(screen_x, screen_y):
         raise ctypes.WinError(ctypes.get_last_error())
     send_inputs(
@@ -369,14 +369,14 @@ def get_client_geometry(hwnd: int) -> tuple[int, int, int, int]:
     width = rect.right - rect.left
     height = rect.bottom - rect.top
     if width < 400 or height < 300:
-        raise RuntimeError(f"Zone cliente Dofus trop petite : {width}×{height}.")
+        raise RuntimeError(f"Dofus client area is too small: {width}×{height}.")
     return origin.x, origin.y, width, height
 
 
 def capture_window(hwnd: int) -> tuple[np.ndarray, int, int]:
     activate_window(hwnd)
-    # Deux images à 60 Hz suffisent généralement au compositeur Windows pour
-    # présenter la fenêtre activée ; 200 ms garde une marge pour Dofus/Qt/Electron.
+    # Two frames at 60 Hz are usually enough for the Windows compositor to show
+    # the activated window; 200 ms leaves headroom for Dofus/Qt/Electron.
     time.sleep(0.20)
     left, top, width, height = get_client_geometry(hwnd)
     with mss.MSS() as screen:
@@ -413,7 +413,7 @@ def get_window_title(hwnd: int) -> str:
     buffer = ctypes.create_unicode_buffer(max(1, length + 1))
     if length:
         user32.GetWindowTextW(hwnd, buffer, length + 1)
-    return buffer.value or f"fenêtre {hwnd}"
+    return buffer.value or f"window {hwnd}"
 
 
 def execute_chat_command_on_window(
@@ -428,9 +428,9 @@ def execute_chat_command_on_window(
     diagnostic_path: Path | None = None,
     after_path: Path | None = None,
 ) -> CommandResult:
-    """Attend le chat d'une fenêtre connue puis y exécute une commande."""
+    """Wait for chat in a known window, then execute a command in it."""
     if not command:
-        raise ValueError("La commande ne peut pas être vide.")
+        raise ValueError("The command cannot be empty.")
 
     deadline = time.monotonic() + max(0.0, wait_timeout)
     while True:
@@ -440,7 +440,7 @@ def execute_chat_command_on_window(
             break
         if time.monotonic() >= deadline:
             raise RuntimeError(
-                f"Barre de chat non détectée dans {get_window_title(hwnd)!r}."
+                f"Chat input was not detected in {get_window_title(hwnd)!r}."
             )
         time.sleep(max(0.05, poll_interval))
 
@@ -458,9 +458,8 @@ def execute_chat_command_on_window(
             command,
             submit,
         )
-        # Laisse au client le temps de consommer Entrée avant qu'une autre
-        # fenêtre ne prenne le focus. Sans cela, la dernière commande pouvait
-        # rester dans le champ de chat sans être envoyée.
+        # Give the client time to consume Enter before another window receives
+        # focus. Otherwise the final command could remain unsent in the input.
         if submit:
             time.sleep(0.18)
         if after_path is not None:
@@ -489,31 +488,31 @@ def execute_chat_command(
     diagnostic_path: Path | None = None,
     after_path: Path | None = None,
 ) -> CommandResult:
-    """Détecte la barre de chat d'une fenêtre Dofus et y exécute une commande.
+    """Detect a Dofus chat input and execute a command in it.
 
     Args:
-        command: texte à saisir, par exemple ``/help``.
-        window_prefix: début du titre de l'unique fenêtre Dofus ciblée.
-        submit: si vrai, appuie sur Entrée après la saisie.
-        dry_run: si vrai, effectue uniquement la détection.
-        delay: délai de sécurité entre la détection et l'action.
-        diagnostic_path: capture annotée facultative avant l'action.
-        after_path: capture facultative après l'action.
+        command: Text to type, for example ``/help``.
+        window_prefix: Start of the target Dofus window title.
+        submit: Press Enter after typing when true.
+        dry_run: Perform detection only when true.
+        delay: Safety delay between detection and action.
+        diagnostic_path: Optional annotated screenshot before the action.
+        after_path: Optional screenshot after the action.
 
     Returns:
-        Le titre exact de la fenêtre, la détection et l'état d'envoi.
+        The exact window title, detection result, and submission state.
 
     Raises:
-        RuntimeError: si la fenêtre n'est pas unique ou si le chat est introuvable.
+        RuntimeError: If the window is not unique or the chat input is missing.
     """
     if not command:
-        raise ValueError("La commande ne peut pas être vide.")
+        raise ValueError("The command cannot be empty.")
 
     hwnd, window_title = find_unique_window(window_prefix)
     image, origin_x, origin_y = capture_window(hwnd)
     detection = detect_chat_bar(image)
     if detection is None:
-        raise RuntimeError(f"Barre de chat non détectée dans {window_title!r}.")
+        raise RuntimeError(f"Chat input was not detected in {window_title!r}.")
 
     if diagnostic_path is not None:
         save_diagnostic(image, detection, diagnostic_path)
@@ -548,27 +547,27 @@ def execute_chat_command(
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("text", nargs="?", default="/help", help="texte à saisir")
-    parser.add_argument("--send", action="store_true", help="appuyer sur Entrée après la saisie")
-    parser.add_argument("--dry-run", action="store_true", help="détecter sans cliquer ni écrire")
-    parser.add_argument("--delay", type=float, default=2.0, help="délai avant le clic réel")
-    parser.add_argument("--image", type=Path, help="analyser une capture au lieu de l'écran")
-    parser.add_argument("--screen", action="store_true", help="analyser l'écran primaire plutôt qu'une fenêtre")
+    parser.add_argument("text", nargs="?", default="/help", help="text to type")
+    parser.add_argument("--send", action="store_true", help="press Enter after typing")
+    parser.add_argument("--dry-run", action="store_true", help="detect without clicking or typing")
+    parser.add_argument("--delay", type=float, default=2.0, help="delay before the real click")
+    parser.add_argument("--image", type=Path, help="analyze a screenshot instead of the desktop")
+    parser.add_argument("--screen", action="store_true", help="analyze the primary display instead of a window")
     parser.add_argument(
         "--window-prefix",
         default="Silvcra",
-        help="début exact du titre de la fenêtre cible (défaut : Silvcra)",
+        help="exact start of the target window title (default: Silvcra)",
     )
-    parser.add_argument("--diagnostic", type=Path, help="enregistrer l'image annotée")
-    parser.add_argument("--after", type=Path, help="enregistrer une capture après la saisie")
+    parser.add_argument("--diagnostic", type=Path, help="save the annotated image")
+    parser.add_argument("--after", type=Path, help="save a screenshot after typing")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_arguments()
 
-    # Le chemin normal utilise l'API publique réutilisable. Les modes --image et
-    # --screen restent des outils de diagnostic indépendants.
+    # The normal path uses the reusable public API. The --image and --screen
+    # modes remain independent diagnostic tools.
     if not args.image and not args.screen:
         try:
             result = execute_chat_command(
@@ -585,22 +584,22 @@ def main() -> int:
             return 3
 
         detection = result.detection
-        print(f"Fenêtre sélectionnée : {result.window_title}")
+        print(f"Selected window: {result.window_title}")
         print(
-            f"Chat détecté : voyant=({detection.anchor_x},{detection.anchor_y}), "
+            f"Chat detected: indicator=({detection.anchor_x},{detection.anchor_y}), "
             f"clic=({detection.click_x},{detection.click_y}), "
             f"confiance={detection.confidence:.0%}"
         )
         if args.diagnostic:
-            print(f"Diagnostic enregistré : {args.diagnostic}")
+            print(f"Diagnostic saved: {args.diagnostic}")
         if result.dry_run:
             print("Mode diagnostic : aucune action souris ou clavier.")
         elif result.submitted:
-            print("Texte saisi et envoyé.")
+            print("Text typed and submitted.")
         else:
-            print("Texte saisi sans appuyer sur Entrée.")
+            print("Text typed without pressing Enter.")
         if args.after and not result.dry_run:
-            print(f"Capture après saisie : {args.after}")
+            print(f"Post-action screenshot: {args.after}")
         return 0
 
     hwnd: int | None = None
@@ -617,17 +616,17 @@ def main() -> int:
 
     detection = detect_chat_bar(image)
     if detection is None:
-        print("Barre de chat non détectée.", file=sys.stderr)
+        print("Chat input was not detected.", file=sys.stderr)
         return 1
 
     print(
-        f"Chat détecté : voyant=({detection.anchor_x},{detection.anchor_y}), "
+        f"Chat detected: indicator=({detection.anchor_x},{detection.anchor_y}), "
         f"clic=({detection.click_x},{detection.click_y}), "
         f"confiance={detection.confidence:.0%}"
     )
     if args.diagnostic:
         save_diagnostic(image, detection, args.diagnostic)
-        print(f"Diagnostic enregistré : {args.diagnostic}")
+        print(f"Diagnostic saved: {args.diagnostic}")
 
     if args.dry_run:
         print("Mode diagnostic : aucune action souris ou clavier.")
@@ -637,8 +636,8 @@ def main() -> int:
         print(f"Saisie dans {args.delay:g} seconde(s)...")
         time.sleep(args.delay)
 
-    # Remet la même fenêtre au premier plan juste avant l'action et recalcule
-    # son origine au cas où elle aurait été déplacée depuis la capture.
+    # Bring the same window forward immediately before the action and recompute
+    # its origin in case it moved after capture.
     if hwnd is not None:
         activate_window(hwnd)
         origin_x, origin_y, _, _ = get_client_geometry(hwnd)
@@ -650,9 +649,9 @@ def main() -> int:
         args.send,
     )
     if args.send:
-        print("Texte saisi et envoyé.")
+        print("Text typed and submitted.")
     else:
-        print("Texte saisi sans appuyer sur Entrée.")
+        print("Text typed without pressing Enter.")
 
     if args.after:
         time.sleep(0.25)
@@ -663,7 +662,7 @@ def main() -> int:
         args.after.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(args.after), after_image):
             raise RuntimeError(f"Impossible d'enregistrer {args.after}")
-        print(f"Capture après saisie : {args.after}")
+        print(f"Post-action screenshot: {args.after}")
     return 0
 
 

@@ -1,8 +1,11 @@
-name: Tests et EXE Windows
+name: Windows CI and Release
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,40 +17,66 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Récupérer les sources
+      - name: Check out the repository
         uses: actions/checkout@v6
 
-      - name: Installer Python
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
-      - name: Installer les dépendances
+      - name: Install dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
 
-      - name: Tests de non-régression
+      - name: Run regression tests
         run: python -m pytest -q
 
-      - name: Construire l'exécutable
+      - name: Build the executable
         run: python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 
-      - name: Vérifier l'exécutable
+      - name: Validate the executable
         shell: pwsh
         run: |
           $exe = "dist/Dofus-MultiCompte-Enhancer.exe"
           if (-not (Test-Path -LiteralPath $exe)) {
-            throw "Exécutable absent : $exe"
+            throw "Executable not found: $exe"
           }
           if ((Get-Item -LiteralPath $exe).Length -lt 1MB) {
-            throw "Exécutable anormalement petit."
+            throw "The executable is unexpectedly small."
           }
 
-      - name: Publier l'artefact
+      - name: Upload the executable artifact
         uses: actions/upload-artifact@v6
         with:
-          name: Dofus-MultiCompte-Enhancer-Windows-${{ github.sha }}
+          name: Dofus-MultiCompte-Enhancer-Windows
           path: dist/Dofus-MultiCompte-Enhancer.exe
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-and-build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download the validated executable
+        uses: actions/download-artifact@v6
+        with:
+          name: Dofus-MultiCompte-Enhancer-Windows
+          path: release
+
+      - name: Create the GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "release/Dofus-MultiCompte-Enhancer.exe" `
+            --repo "${{ github.repository }}" `
+            --title "Dofus MultiCompte Enhancer ${{ github.ref_name }}" `
+            --generate-notes `
+            --verify-tag

@@ -1,31 +1,51 @@
 # Dofus MultiCompte Enhancer
 
-Interface Windows compacte pour piloter plusieurs fenêtres Dofus depuis une barre inspirée de l’interface du jeu.
+[![Windows CI and Release](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/actions/workflows/windows-build.yml/badge.svg)](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/actions/workflows/windows-build.yml)
+[![Latest release](https://img.shields.io/github/v/release/silverspy/Dofus-MultiCompte-Enhancer?display_name=tag)](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/releases/latest)
 
-## Fonctionnalités
+A compact Windows companion for managing several Dofus windows from a toolbar inspired by the game's interface.
 
-- lancement d’Ankama Launcher et ouverture des quatre fenêtres Dofus ;
-- détection visuelle des boutons `JOUER` et `ACCEPTER` ;
-- lecture OCR des personnages sélectionnés ;
-- création automatique du groupe par invitations ;
-- navigation rapide entre les fenêtres avec raccourcis clavier ou souris ;
-- réplication optionnelle des clics, déplacements de souris et frappes clavier ;
-- position, échelle, transparence, orientation et contrôles personnalisables ;
-- interface verticale ou horizontale avec icônes de classes et chef de groupe.
+<p align="center">
+  <img src="docs/images/toolbar-vertical.png" height="390" alt="Vertical toolbar with the group leader and active character" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/images/settings-window.png" height="390" alt="Dofus MultiCompte Enhancer settings window" />
+</p>
 
-## Télécharger l’EXE
+## Features
 
-Chaque commit déclenche la workflow **Tests et EXE Windows**. Une fois terminée, l’exécutable est disponible dans l’artefact `Dofus-MultiCompte-Enhancer-Windows-<commit>` de l’exécution GitHub Actions.
+- starts Ankama Launcher and opens the four expected Dofus windows;
+- detects the `JOUER` and `ACCEPTER` buttons visually;
+- reads the selected character names with local OCR;
+- creates the group automatically through invitations;
+- switches quickly between windows with configurable keyboard or mouse shortcuts;
+- optionally mirrors clicks, mouse movement, scrolling, and keyboard input;
+- preserves proportional click coordinates when window sizes differ;
+- provides configurable orientation, position locks, scale, opacity, leader, and Play button;
+- supports compact vertical and horizontal layouts with class icons and a leader crown.
 
-Les réglages et les personnages détectés sont conservés dans :
+## Download
+
+Download the latest ready-to-run Windows executable from the [Releases page](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/releases/latest).
+
+No Python installation is required for the released executable. Windows may display a SmartScreen warning because the binary is not code-signed.
+
+Application settings and detected characters are stored in:
 
 ```text
 %LOCALAPPDATA%\Dofus MultiCompte Enhancer
 ```
 
-## Développement
+## Automated builds and releases
 
-Prérequis : Windows et Python 3.12 ou plus récent.
+The **Windows CI and Release** workflow runs the regression suite and builds a standalone executable for every commit and pull request targeting `main`.
+
+- Every successful workflow run provides a downloadable executable artifact for 14 days.
+- Pushing a tag such as `v0.1.0` creates a GitHub Release automatically.
+- The release is created only after the tests, build, and executable validation succeed.
+
+## Development
+
+Requirements: Windows and Python 3.12 or newer.
 
 ```powershell
 python -m venv .venv
@@ -35,24 +55,25 @@ python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
-L’exécutable est alors créé dans `dist\Dofus-MultiCompte-Enhancer.exe`.
+The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`.
 
-Pour lancer directement les sources :
+Run the application directly from source with:
 
 ```powershell
 python .\app\dofus_panel.py
 ```
 
-## Tests de non-régression
+## Regression coverage
 
-Les tests couvrent notamment :
+The automated tests cover, among other things:
 
-- la détection de la barre de chat ;
-- le refus du bouton `JOUER` gris pendant le chargement ;
-- la détection du bouton d’acceptation des invitations ;
-- la validation OCR des pseudonymes ;
-- les raccourcis, la configuration, la transparence des icônes et les ressources requises.
+- chat input detection;
+- rejection of the gray `JOUER` loading state;
+- invitation acceptance detection;
+- OCR character-name validation;
+- active-character highlighting after the launch workflow;
+- keyboard mappings, configuration persistence, icon transparency, and required assets.
 
-## Avertissement
+## Disclaimer
 
-Projet communautaire non affilié à Ankama. L’utilisateur reste responsable du respect des conditions d’utilisation du jeu.
+This is an unofficial community project and is not affiliated with Ankama. Users remain responsible for complying with the game's terms of service.

@@ -1,8 +1,8 @@
-"""Panneau flottant pour piloter une équipe de fenêtres Dofus.
+"""Floating panel for controlling a team of Dofus windows.
 
-Interface native Tkinter, sans bordure, semi-transparente et toujours visible.
-Elle lit players.json, suit la fenêtre au premier plan et lance le workflow de
-connexion existant sans bloquer l'interface.
+Native Tkinter interface: borderless, semi-transparent, and always visible.
+It reads players.json, tracks the foreground window, and launches the workflow
+without blocking the interface.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ WORKFLOW_PATH = BUNDLE_DIR / "dofus_character_login.py"
 CLASS_SYMBOLS_DIR = ASSETS_DIR / "class-symbols"
 APP_ICON_PATH = ASSETS_DIR / "dofus-multicompteenhancer.ico"
 
-# Fond bleu-noir uniforme inspiré des petites fenêtres de Dofus.
+# Uniform blue-black background inspired by small Dofus panels.
 DOFUS_NAVY = "#313445"
 BG = DOFUS_NAVY
 BG_DEEP = DOFUS_NAVY
@@ -131,11 +131,11 @@ MOUSEEVENTF_HWHEEL = 0x1000
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 MODIFIER_KEYS = (
-    0xA0, 0xA1,  # Maj gauche / droite
-    0xA2, 0xA3,  # Ctrl gauche / droite
-    0xA4, 0xA5,  # Alt gauche / droite
-    0x5B, 0x5C,  # Windows gauche / droite
-    0x10, 0x11, 0x12,  # variantes génériques
+    0xA0, 0xA1,  # left/right Shift
+    0xA2, 0xA3,  # left/right Ctrl
+    0xA4, 0xA5,  # left/right Alt
+    0x5B, 0x5C,  # left/right Windows
+    0x10, 0x11, 0x12,  # generic variants
 )
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
@@ -363,7 +363,7 @@ def save_json(path: Path, payload: dict) -> None:
 
 
 def monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
-    """Retourne la zone utilisable du moniteur contenant la fenêtre."""
+    """Return the usable area of the monitor containing the window."""
     monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
     if not monitor:
         return None
@@ -376,20 +376,20 @@ def monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
 
 
 def apply_rounded_window(window: tk.Misc, diameter: int = 6) -> None:
-    """Applique un arrondi Win32 très discret à une fenêtre sans bordure."""
+    """Apply a subtle Win32 rounded region to a borderless window."""
     window.update_idletasks()
     width = max(1, window.winfo_width())
     height = max(1, window.winfo_height())
     region = gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter)
     if not region:
         return
-    # En cas de succès Windows devient propriétaire de la région.
+    # Windows owns the region after a successful call.
     if not user32.SetWindowRgn(window.winfo_id(), region, True):
         gdi32.DeleteObject(region)
 
 
 def expose_root_in_taskbar(root: tk.Tk) -> None:
-    """Conserve la fenêtre sans bordure tout en créant un bouton de tâche."""
+    """Keep the window borderless while creating a taskbar button."""
     root.update_idletasks()
     alpha = float(root.attributes("-alpha"))
     inner_handle = root.winfo_id()
@@ -398,8 +398,8 @@ def expose_root_in_taskbar(root: tk.Tk) -> None:
     style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
     user32.SetWindowLongW(native_handle, GWL_EXSTYLE, style)
 
-    # Un masquage très bref force l'Explorateur à recréer le bouton avec le
-    # nouveau style, sans réintroduire la barre de titre Windows.
+    # A very brief hide forces Explorer to rebuild the button with the new style
+    # without restoring the Windows title bar.
     user32.ShowWindow(native_handle, SW_HIDE)
     user32.ShowWindow(native_handle, SW_SHOW)
     root.attributes("-topmost", True)
@@ -407,9 +407,9 @@ def expose_root_in_taskbar(root: tk.Tk) -> None:
 
 
 def get_window_icon(hwnd: int, size: int = 36) -> Image.Image | None:
-    """Convertit l'icône Win32 réelle de la fenêtre en image Pillow."""
-    # GetClassLongPtrW est local au processus appelant et ne peut pas rester
-    # bloqué sur le thread graphique de Dofus, contrairement à SendMessageW.
+    """Convert the window's real Win32 icon to a Pillow image."""
+    # GetClassLongPtrW is local to the caller and cannot remain blocked on the
+    # Dofus UI thread, unlike SendMessageW.
     getter = getattr(user32, "GetClassLongPtrW", user32.GetClassLongW)
     hicon = getter(hwnd, GCLP_HICONSM) or getter(hwnd, GCLP_HICON)
     if not hicon:
@@ -473,15 +473,15 @@ def class_icon_image(class_name: str, size: int = 28) -> Image.Image | None:
 
 
 def add_leader_crown(image: Image.Image, size: int = 28) -> Image.Image:
-    """Ajoute une petite couronne filaire sans aucun fond opaque."""
+    """Add a small outline crown without any opaque background."""
     scale = 4
     canvas = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
 
     def unit(value: float) -> int:
         return round(value * size / 28.0 * scale)
 
-    # Le symbole du personnage reste centré dans la cellule, légèrement réduit
-    # pour dégager la couronne sans rogner sa partie supérieure.
+    # Keep the character symbol centered and slightly reduced so the crown has
+    # room without clipping the top of the icon.
     symbol = ImageOps.contain(
         image.convert("RGBA"),
         (size - 2, size - 3),
@@ -505,7 +505,7 @@ def add_leader_crown(image: Image.Image, size: int = 28) -> Image.Image:
         (unit(20), unit(2)),
         (unit(21), unit(7)),
     ]
-    # Une ombre très fine préserve la lisibilité, puis le tracé doré reste creux.
+    # A thin shadow preserves legibility while the gold outline stays hollow.
     line_width = max(2, unit(1))
     shadow = [(x, y + max(1, unit(1))) for x, y in crown]
     draw.line(shadow, fill=(35, 30, 20, 210), width=2 * line_width, joint="curve")
@@ -526,13 +526,13 @@ def rounded_cell_background(
     height: int = 38,
     outline_width: int = 1,
 ) -> Image.Image:
-    """Crée un fond de cellule arrondi et anticrénelé sans changer sa taille."""
+    """Create an antialiased rounded cell background without resizing it."""
     scale = 4
     canvas_size = (width * scale, height * scale)
     image = Image.new("RGB", canvas_size, DOFUS_NAVY)
     draw = ImageDraw.Draw(image)
 
-    # Petite ombre portée vers le bas, comme les cases de la barre Dofus.
+    # Small downward shadow, matching cells in the Dofus toolbar.
     shadow_box = (2 * scale, 3 * scale, (width - 1) * scale, (height - 1) * scale)
     draw.rounded_rectangle(shadow_box, radius=4 * scale, fill=CELL_SHADOW)
 
@@ -562,7 +562,7 @@ def rounded_cell_background(
         outline=outline,
         width=outline_width * scale,
     )
-    # Reflet très discret sur la tranche supérieure.
+    # Very subtle highlight along the top edge.
     draw.line(
         (5 * scale, 2 * scale, (width - 6) * scale, 2 * scale),
         fill=CELL_HIGHLIGHT,
@@ -578,7 +578,7 @@ def rounded_control_background(
     width: int = 16,
     height: int = 16,
 ) -> Image.Image:
-    """Petit bouton légèrement arrondi avec une ombre d'un pixel."""
+    """Small, slightly rounded button with a one-pixel shadow."""
     scale = 4
     image = Image.new("RGB", (width * scale, height * scale), DOFUS_NAVY)
     draw = ImageDraw.Draw(image)
@@ -651,7 +651,7 @@ class RoundedControlButton(tk.Label):
 
 
 class RoundedSettingsButton(tk.Label):
-    """Bouton large antialiasé reprenant le relief des cellules Dofus."""
+    """Large antialiased button matching the relief of Dofus cells."""
 
     def __init__(
         self,
@@ -717,7 +717,7 @@ class RoundedSettingsButton(tk.Label):
 
 
 class DofusCheckBox(tk.Frame):
-    """Case à cocher plate, sans ombre, avec un arrondi discret."""
+    """Flat shadowless checkbox with subtle rounding."""
 
     def __init__(
         self, master: tk.Misc, *, text: str, variable: tk.BooleanVar
@@ -765,7 +765,7 @@ class DofusCheckBox(tk.Frame):
 
 
 class DofusSlider(tk.Canvas):
-    """Curseur compact à piste arrondie et poignée circulaire."""
+    """Compact slider with a rounded track and circular thumb."""
 
     def __init__(
         self,
@@ -833,7 +833,7 @@ class DofusSlider(tk.Canvas):
 
 
 class DofusComboBox(RoundedSettingsButton):
-    """Liste compacte avec contrôle arrondi et menu sombre personnalisé."""
+    """Compact list with a rounded control and custom dark menu."""
 
     def __init__(
         self, master: tk.Misc, *, variable: tk.StringVar, values: list[str]
@@ -1046,10 +1046,10 @@ class DofusPanel:
 
         self.shell = tk.Frame(root, bg=BG_DEEP, highlightbackground=BORDER, highlightthickness=1)
         self.shell.pack(fill="both", expand=True)
-        # Les marges latérales servent de poignée, sans ajouter de barre en haut.
+        # Side margins act as handles without adding a top bar.
         self.shell.configure(cursor="fleur")
-        # Liaison au niveau de la fenêtre : les fines bordures latérales et les
-        # espaces entre cellules restent ainsi de vraies poignées de déplacement.
+        # Bind at window level so thin side borders and gaps between cells remain
+        # usable drag handles.
         root.bind("<ButtonPress-1>", self.start_drag)
         root.bind("<B1-Motion>", self.drag)
         root.bind("<ButtonRelease-1>", self.end_drag)
@@ -1202,12 +1202,15 @@ class DofusPanel:
             cell = PlayerCell(self.content, self, player)
             cell.pack(side="left" if horizontal else "top", padx=0, pady=0)
             self.cells.append(cell)
+        foreground = int(user32.GetForegroundWindow() or 0)
+        if not self.synchronize_active_player(foreground, force_refresh=True):
+            self.refresh_cells()
         self.root.update_idletasks()
         self.ensure_visible()
         self.root.after_idle(lambda: apply_rounded_window(self.root, 6))
 
     def ensure_visible(self) -> None:
-        """Garde le panneau entier dans l'écran après un changement de taille."""
+        """Keep the entire panel on-screen after resizing."""
         self.root.update_idletasks()
         width = self.root.winfo_width()
         height = self.root.winfo_height()
@@ -1287,8 +1290,8 @@ class DofusPanel:
         self.selected_index = self.players.index(player)
         self.refresh_cells()
         self.root.update_idletasks()
-        # Laisse une image à Tk pour peindre la nouvelle sélection avant que
-        # l'activation de la fenêtre Windows ne commence.
+        # Give Tk one frame to paint the new selection before Windows activation
+        # begins.
         self.root.after(
             16,
             lambda: self.finish_player_activation(player, generation),
@@ -1340,8 +1343,8 @@ class DofusPanel:
 
     def set_broadcast_enabled(self, enabled: bool) -> None:
         self.broadcast_enabled = enabled
-        # Le mode reste signalé par le message d'état, sans bordure jaune
-        # persistante qui modifierait la charte visuelle du panneau.
+        # Status text indicates the mode without a persistent yellow border that
+        # would alter the panel's visual language.
         self.shell.configure(highlightbackground=BORDER)
         online_count = sum(player.handle is not None for player in self.players)
         if enabled and online_count < 2:
@@ -1365,7 +1368,7 @@ class DofusPanel:
         return source, [handle for handle in handles if handle != source]
 
     def start_broadcast_worker(self) -> None:
-        """Exécute les clics répliqués hors du hook global Windows."""
+        """Execute replicated clicks outside the global Windows hook."""
         self.broadcast_stop.clear()
 
         def worker() -> None:
@@ -1387,9 +1390,9 @@ class DofusPanel:
         self.broadcast_thread.start()
 
     def replay_mouse_action(self, action: BroadcastMouseAction) -> None:
-        """Rejoue un clic physique sur chaque client, puis restaure la source."""
-        # Laisse Windows remettre le clic original à la fenêtre source avant
-        # de commencer les activations très rapides des fenêtres secondaires.
+        """Replay a physical click on each client, then restore the source."""
+        # Let Windows deliver the original click to the source window before
+        # rapidly activating secondary windows.
         time.sleep(0.020)
         original_cursor = POINT()
         user32.GetCursorPos(ctypes.byref(original_cursor))
@@ -1442,7 +1445,7 @@ class DofusPanel:
             self.broadcast_replay_active.clear()
 
     def replay_keyboard_action(self, action: BroadcastKeyboardAction) -> None:
-        """Rejoue une touche ou combinaison sur chaque fenêtre secondaire."""
+        """Replay a key or key combination on each secondary window."""
         time.sleep(0.015)
         self.broadcast_replay_active.set()
 
@@ -1516,9 +1519,9 @@ class DofusPanel:
         source_height = max(1, source_rect.bottom - source_rect.top)
         ratio_x = min(1.0, max(0.0, source_point.x / source_width))
         ratio_y = min(1.0, max(0.0, source_point.y / source_height))
-        # Unity ignore souvent les messages souris postés en arrière-plan. On
-        # attend la fin du clic, puis un worker rejoue un vrai clic sur chaque
-        # fenêtre sans bloquer le hook global.
+        # Unity often ignores mouse messages posted in the background. Wait for
+        # the original click to finish, then let a worker replay a real click in
+        # each window without blocking the global hook.
         if message_id in {
             WM_LBUTTONUP, WM_RBUTTONUP, WM_MBUTTONUP, WM_XBUTTONUP,
             WM_MOUSEWHEEL, WM_MOUSEHWHEEL,
@@ -1537,6 +1540,27 @@ class DofusPanel:
     def refresh_cells(self) -> None:
         for cell in self.cells:
             cell.refresh(cell.player.handle is not None and cell.player.handle == self.active_handle)
+
+    def synchronize_active_player(
+        self, foreground: int, *, force_refresh: bool = False
+    ) -> bool:
+        """Synchronize selection with the foreground Dofus window."""
+        matching_index = next(
+            (
+                index
+                for index, player in enumerate(self.players)
+                if player.handle is not None and player.handle == foreground
+            ),
+            None,
+        )
+        if matching_index is None:
+            return False
+        changed = self.active_handle != foreground or self.selected_index != matching_index
+        self.active_handle = foreground
+        self.selected_index = matching_index
+        if changed or force_refresh:
+            self.refresh_cells()
+        return True
 
     def set_status(self, text: str, color: str = MUTED) -> None:
         if self.status_popup is None or not self.status_popup.winfo_exists():
@@ -2051,13 +2075,8 @@ class DofusPanel:
             self.pending_activation_handle is None
             and not self.broadcast_replay_active.is_set()
             and foreground != self.active_handle
-            and any(player.handle == foreground for player in self.players)
         ):
-            self.active_handle = foreground
-            self.selected_index = next(
-                index for index, player in enumerate(self.players) if player.handle == foreground
-            )
-            self.refresh_cells()
+            self.synchronize_active_player(foreground)
 
         now = time.monotonic()
         if now >= self.next_window_resolve:
@@ -2103,8 +2122,8 @@ class DofusPanel:
             self.config_data["y"] = self.root.winfo_y()
             save_json(CONFIG_PATH, self.config_data)
         finally:
-            # La destruction reste garantie même si un hook Windows ou la
-            # sauvegarde de configuration échoue pendant la fermeture.
+            # Destruction remains guaranteed even if a Windows hook or config
+            # save fails during shutdown.
             try:
                 self.root.destroy()
             except tk.TclError:
