@@ -1,8 +1,8 @@
-"""Ouvre Ankama Launcher, attend le bouton JOUER puis lance Dofus.
+"""Open Ankama Launcher, wait for the PLAY button, then start Dofus.
 
-La reconnaissance exige deux ancres visuelles simultanées : le mot JOUER et
-le pictogramme des personnages placé à sa gauche. Un téléchargement peut donc
-remplacer temporairement le bouton sans provoquer de clic erroné.
+Detection requires two visual anchors at once: the PLAY label and the character
+icon to its left. An update can therefore replace the button temporarily without
+causing an incorrect click.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ class LaunchResult:
 def load_template(path: Path) -> np.ndarray:
     template = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if template is None:
-        raise RuntimeError(f"Modèle visuel introuvable ou illisible : {path}")
+        raise RuntimeError(f"Visual template is missing or unreadable: {path}")
     return template
 
 
@@ -110,7 +110,7 @@ def detect_play_button(
     threshold: float = 0.68,
 ) -> PlayButton | None:
     height, width = image.shape[:2]
-    # Le catalogue et son bouton sont dans la partie supérieure gauche.
+    # The game card and its button are in the upper-left area.
     search = image[: int(height * 0.72), : int(width * 0.58)]
     scales = tuple(float(value) for value in np.linspace(0.65, 1.45, 17))
     text = best_multiscale_match(search, text_template, scales=scales)
@@ -124,7 +124,7 @@ def detect_play_button(
     people_x, people_y = people.center
     average_scale = (text.scale + people.scale) / 2.0
 
-    # Les personnages doivent se trouver à gauche, dans le même bouton.
+    # The character icon must be on the left, inside the same button.
     horizontal_gap = text_x - people_x
     vertical_gap = abs(text_y - people_y)
     if not (70 * average_scale <= horizontal_gap <= 220 * average_scale):
@@ -132,7 +132,7 @@ def detect_play_button(
     if vertical_gap > 35 * average_scale:
         return None
 
-    # Vérifie le fond blanc du bouton autour du texte.
+    # Validate the white button background around the label.
     radius_x = max(12, int(32 * text.scale))
     radius_y = max(8, int(18 * text.scale))
     x0, x1 = max(0, text_x - radius_x), min(search.shape[1], text_x + radius_x)
@@ -160,7 +160,7 @@ def find_launcher_window() -> tuple[int, str] | None:
         return None
     if len(matches) != 1:
         titles = ", ".join(title for _, title in matches)
-        raise RuntimeError(f"Plusieurs fenêtres Ankama Launcher visibles : {titles}")
+        raise RuntimeError(f"Multiple Ankama Launcher windows are visible: {titles}")
     return matches[0]
 
 
@@ -175,7 +175,7 @@ def ensure_launcher_window(
         return existing
 
     if not executable.is_file():
-        raise RuntimeError(f"Ankama Launcher introuvable : {executable}")
+        raise RuntimeError(f"Ankama Launcher was not found: {executable}")
     subprocess.Popen(
         [str(executable)],
         close_fds=True,
@@ -190,7 +190,7 @@ def ensure_launcher_window(
         if window is not None:
             activate_window(window[0])
             return window
-    raise TimeoutError("Ankama Launcher ne présente aucune fenêtre après le délai prévu.")
+    raise TimeoutError("Ankama Launcher did not expose a window before the timeout.")
 
 
 def save_button_diagnostic(image: np.ndarray, button: PlayButton, path: Path) -> None:
@@ -220,7 +220,7 @@ def launch_dofus(
     dry_run: bool = False,
     diagnostic_path: Path | None = None,
 ) -> LaunchResult:
-    """Ouvre le launcher, attend JOUER et clique une seule fois."""
+    """Open the launcher, wait for PLAY, and click it exactly once."""
     start = time.monotonic()
     hwnd, title = ensure_launcher_window(launcher_path)
     people = load_template(assets_dir / "ankama-play-people.png")
@@ -235,7 +235,7 @@ def launch_dofus(
             if diagnostic_path is not None:
                 save_button_diagnostic(image, button, diagnostic_path)
             if not dry_run:
-                # Recalcule l'origine immédiatement avant l'unique clic.
+                # Recompute the origin immediately before the single click.
                 activate_window(hwnd)
                 origin_x, origin_y, _, _ = get_client_geometry(hwnd)
                 click_screen(origin_x + button.click_x, origin_y + button.click_y)
@@ -249,11 +249,11 @@ def launch_dofus(
         now = time.monotonic()
         if now - last_message >= 30:
             elapsed = now - start
-            print(f"JOUER indisponible après {elapsed:.0f}s ; mise à jour possible, attente...")
+            print(f"PLAY unavailable after {elapsed:.0f}s; an update may be running, waiting...")
             last_message = now
         time.sleep(max(0.5, poll_interval))
 
-    raise TimeoutError(f"Le bouton JOUER n'est pas apparu après {wait_timeout:.0f} secondes.")
+    raise TimeoutError(f"The PLAY button did not appear within {wait_timeout:.0f} seconds.")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -261,10 +261,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--launcher-path", type=Path, default=DEFAULT_LAUNCHER)
     parser.add_argument("--assets-dir", type=Path, default=DEFAULT_ASSETS)
     parser.add_argument("--image", type=Path, help="tester une capture sans ouvrir le launcher")
-    parser.add_argument("--timeout", type=float, default=2700.0, help="attente maximale en secondes")
-    parser.add_argument("--poll", type=float, default=5.0, help="intervalle de vérification")
-    parser.add_argument("--dry-run", action="store_true", help="détecter sans cliquer")
-    parser.add_argument("--diagnostic", type=Path, help="enregistrer la détection annotée")
+    parser.add_argument("--timeout", type=float, default=2700.0, help="maximum wait time in seconds")
+    parser.add_argument("--poll", type=float, default=5.0, help="polling interval")
+    parser.add_argument("--dry-run", action="store_true", help="detect without clicking")
+    parser.add_argument("--diagnostic", type=Path, help="save the annotated detection image")
     return parser.parse_args()
 
 
@@ -283,13 +283,13 @@ def main() -> int:
             print(str(error))
             return 2
         if button is None:
-            print("Bouton JOUER non détecté dans la capture.")
+            print("PLAY button was not detected in the screenshot.")
             return 1
         if args.diagnostic is not None:
             save_button_diagnostic(image, button, args.diagnostic)
         print(
-            f"Bouton JOUER détecté à ({button.click_x},{button.click_y}), "
-            f"confiance {button.confidence:.0%}. Aucune action effectuée."
+            f"PLAY button detected at ({button.click_x},{button.click_y}), "
+            f"confidence {button.confidence:.0%}. No action was performed."
         )
         return 0
 
@@ -306,9 +306,9 @@ def main() -> int:
         print(str(error))
         return 1
 
-    action = "détecté sans clic" if not result.clicked else "cliqué"
+    action = "detected without clicking" if not result.clicked else "clicked"
     print(
-        f"Bouton JOUER {action} dans {result.window_title!r} après "
+        f"PLAY button {action} in {result.window_title!r} after "
         f"{result.waited_seconds:.1f}s (confiance {result.button.confidence:.0%})."
     )
     return 0
