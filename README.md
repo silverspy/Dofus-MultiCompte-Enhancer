@@ -11,13 +11,13 @@
 
 ## Français
 
-Pilotez vos comptes Dofus depuis une seule barre compacte, pensée pour rester discrète à côté de l'interface du jeu. **Dofus MultiCompte Enhancer** automatise les manipulations répétitives et vous laisse vous concentrer sur votre partie : lancez votre équipe, formez votre groupe, changez de personnage et répliquez vos actions sans jongler manuellement entre quatre fenêtres.
+Pilotez vos comptes Dofus depuis une seule barre compacte, pensée pour rester discrète à côté de l'interface du jeu. **Dofus MultiCompte Enhancer** automatise les manipulations répétitives et vous laisse vous concentrer sur votre partie : lancez votre équipe, formez votre groupe, changez de personnage et répliquez vos actions sans jongler manuellement entre vos fenêtres.
 
 ### Trois fonctions pour gagner du temps à chaque session
 
 #### 🚀 1. Auto-connect et invitations automatiques
 
-Appuyez sur Play et laissez l'outil préparer votre session. Il ouvre Ankama Launcher si nécessaire, démarre les quatre clients, attend que chaque bouton `JOUER` soit réellement disponible, reconnaît vos personnages puis entre en jeu. Votre chef invite ensuite automatiquement les trois autres personnages, chaque invitation est acceptée et vous revenez directement sur la fenêtre du chef.
+Appuyez sur Play et laissez l'outil préparer votre session. Il ouvre Ankama Launcher si nécessaire, détecte automatiquement le nombre de comptes sélectionnés, attend que chaque bouton `JOUER` soit réellement disponible, reconnaît vos personnages puis entre en jeu. Votre chef invite ensuite automatiquement tous les autres personnages, chaque invitation est acceptée où que son panneau apparaisse et vous revenez directement sur la fenêtre du chef.
 
 #### 🪞 2. Répliquez vos actions sur toutes les fenêtres
 
@@ -37,6 +37,7 @@ Passez au personnage précédent ou suivant avec une touche clavier, un bouton d
 | 🔒 | **Verrouiller la barre ou les icônes** afin d'éviter les déplacements involontaires en pleine partie. |
 | 🎛️ | **Configurer chaque raccourci** avec votre clavier, vos boutons de souris ou votre molette. |
 | 🌍 | **Utiliser l'application en français ou en anglais** depuis le menu des paramètres. |
+| 🔄 | **Être averti des nouvelles versions et les installer automatiquement** sans rechercher ni remplacer manuellement l'exécutable. |
 
 <p align="center">
   <img src="docs/images/toolbar-vertical.png" height="390" alt="Barre verticale avec chef de groupe et personnage actif" />
@@ -44,9 +45,14 @@ Passez au personnage précédent ou suivant avec une touche clavier, un bouton d
   <img src="docs/images/settings-window.png" height="390" alt="Fenêtre des paramètres de Dofus MultiCompte Enhancer" />
 </p>
 
-### Télécharger
+### Télécharger : portable ou installateur
 
-Téléchargez l'exécutable Windows prêt à l'emploi depuis la [dernière Release](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/releases/latest).
+Choisissez votre format depuis la [dernière Release](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/releases/latest) :
+
+| Version | Pour quel usage ? |
+|---|---|
+| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | Installation Windows classique dans votre profil, raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. |
+| **`Dofus-MultiCompte-Enhancer-Portable.zip`** | Aucun installateur : décompressez l'archive où vous le souhaitez et lancez directement l'EXE. La mise à jour portable remplace et relance automatiquement l'application. |
 
 Aucune installation de Python n'est nécessaire. Windows peut afficher un avertissement SmartScreen, car l'exécutable n'est pas signé numériquement.
 
@@ -68,19 +74,19 @@ python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
-L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipeline Windows construit également un artefact à chaque changement ciblant `main` et publie automatiquement une Release lors de l'envoi d'un tag `v*`.
+L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipeline Windows construit l'EXE brut, l'archive portable et l'installateur à chaque changement ciblant `main`, puis publie automatiquement les trois fichiers lors de l'envoi d'un tag `v*`.
 
 ---
 
 ## English
 
-Control your Dofus accounts from one compact toolbar designed to sit discreetly beside the game interface. **Dofus MultiCompte Enhancer** handles repetitive setup so you can focus on playing: launch your team, build the group, switch characters, and mirror actions without manually juggling four windows.
+Control your Dofus accounts from one compact toolbar designed to sit discreetly beside the game interface. **Dofus MultiCompte Enhancer** handles repetitive setup so you can focus on playing: launch your team, build the group, switch characters, and mirror actions without manually juggling your windows.
 
 ### Three features that save time in every session
 
 #### 🚀 1. Auto-connect and automatic invitations
 
-Press Play and let the tool prepare your session. It opens Ankama Launcher when needed, starts all four clients, waits until every `PLAY` button is genuinely ready, recognizes your characters, and enters the game. Your leader then invites the other three characters automatically, each invitation is accepted, and you return directly to the leader's window.
+Press Play and let the tool prepare your session. It opens Ankama Launcher when needed, automatically detects how many accounts are selected, waits until every `PLAY` button is genuinely ready, recognizes your characters, and enters the game. Your leader then invites every other character automatically, each invitation is accepted wherever its panel appears, and you return directly to the leader's window.
 
 #### 🪞 2. Mirror your actions across every window
 
@@ -100,10 +106,16 @@ Move to the previous or next character with a keyboard key, mouse button, or the
 | 🔒 | **Lock the toolbar or character icons** to prevent accidental movement while playing. |
 | 🎛️ | **Configure every shortcut** using your keyboard, mouse buttons, or wheel. |
 | 🌍 | **Use the application in French or English** from the settings panel. |
+| 🔄 | **Get notified about new releases and install them automatically** without manually finding or replacing the executable. |
 
-### Download
+### Download: portable or installer
 
-Download the ready-to-run Windows executable from the [latest Release](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/releases/latest).
+Choose a package from the [latest Release](https://github.com/silverspy/Dofus-MultiCompte-Enhancer/releases/latest):
+
+| Package | Best for |
+|---|---|
+| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | A standard per-user Windows installation with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. |
+| **`Dofus-MultiCompte-Enhancer-Portable.zip`** | No installer: extract it anywhere and run the EXE directly. Portable updates replace and restart the application automatically. |
 
 Python is not required for the released executable. Windows may display a SmartScreen warning because the binary is not code-signed.
 
@@ -125,7 +137,7 @@ python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
-The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The Windows pipeline also builds an artifact for every change targeting `main` and automatically publishes a Release when a `v*` tag is pushed.
+The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The Windows pipeline builds the raw EXE, portable archive, and installer for every change targeting `main`, then publishes all three files automatically when a `v*` tag is pushed.
 
 ## Avertissement / Disclaimer
 

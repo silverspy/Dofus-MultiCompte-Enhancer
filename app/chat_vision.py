@@ -593,7 +593,7 @@ def main() -> int:
         if args.diagnostic:
             print(f"Diagnostic saved: {args.diagnostic}")
         if result.dry_run:
-            print("Mode diagnostic : aucune action souris ou clavier.")
+            print("Diagnostic mode: no mouse or keyboard action was performed.")
         elif result.submitted:
             print("Text typed and submitted.")
         else:
@@ -629,7 +629,7 @@ def main() -> int:
         print(f"Diagnostic saved: {args.diagnostic}")
 
     if args.dry_run:
-        print("Mode diagnostic : aucune action souris ou clavier.")
+        print("Diagnostic mode: no mouse or keyboard action was performed.")
         return 0
 
     if args.delay > 0:

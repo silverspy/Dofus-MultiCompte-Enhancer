@@ -25,7 +25,9 @@ from ctypes import wintypes
 
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
+from build_version import APP_VERSION
 from chat_vision import activate_window, list_windows_by_executable
+from updater import ReleaseInfo, fetch_latest_release, is_newer_release, launch_update
 
 
 SOURCE_DIR = Path(__file__).resolve().parent
@@ -121,6 +123,12 @@ TRANSLATIONS = {
         "replication_error": "RÉPLICATION: {error}",
         "done": "TERMINÉ",
         "error": "ERREUR",
+        "update_available": "MISE À JOUR DISPONIBLE",
+        "update_message": "La version {version} est disponible. Voulez-vous l’installer maintenant ?",
+        "update_now": "METTRE À JOUR",
+        "update_later": "PLUS TARD",
+        "update_downloading": "TÉLÉCHARGEMENT DE LA MISE À JOUR…",
+        "update_failed": "ÉCHEC DE LA MISE À JOUR: {error}",
     },
     "en": {
         "settings": "SETTINGS",
@@ -151,6 +159,12 @@ TRANSLATIONS = {
         "replication_error": "REPLICATION: {error}",
         "done": "DONE",
         "error": "ERROR",
+        "update_available": "UPDATE AVAILABLE",
+        "update_message": "Version {version} is available. Install it now?",
+        "update_now": "UPDATE NOW",
+        "update_later": "LATER",
+        "update_downloading": "DOWNLOADING UPDATE…",
+        "update_failed": "UPDATE FAILED: {error}",
     },
 }
 
@@ -1140,6 +1154,7 @@ class DofusPanel:
         self.broadcast_thread: threading.Thread | None = None
         self.workflow: subprocess.Popen[str] | None = None
         self.output_queue: queue.Queue[str] = queue.Queue()
+        self.update_events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.drag_origin = (0, 0)
         self.drag_start = (0, 0)
         self.dragging = False
@@ -1147,6 +1162,8 @@ class DofusPanel:
         self.status_popup: tk.Toplevel | None = None
         self.status_after_id: str | None = None
         self.settings_dialog: tk.Toplevel | None = None
+        self.update_dialog: tk.Toplevel | None = None
+        self.update_check_started = False
         self.closing = False
 
         root.title("Dofus Multicompte Enhancer")
@@ -1178,6 +1195,7 @@ class DofusPanel:
         self.start_input_listener()
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(120, lambda: expose_root_in_taskbar(root))
+        root.after(1800, self.check_for_updates_async)
         self.poll()
 
     def ui_scale(self) -> float:
@@ -1693,6 +1711,127 @@ class DofusPanel:
             self.refresh_cells()
         return True
 
+    def check_for_updates_async(self) -> None:
+        """Check GitHub in the background without delaying application startup."""
+        if self.update_check_started or not getattr(sys, "frozen", False):
+            return
+        self.update_check_started = True
+
+        def worker() -> None:
+            try:
+                release = fetch_latest_release()
+                if is_newer_release(APP_VERSION, release):
+                    self.update_events.put(("available", release))
+            except Exception:
+                # A failed network check must never prevent local use.
+                return
+
+        threading.Thread(target=worker, daemon=True, name="update-check").start()
+
+    def show_update_dialog(self, release: ReleaseInfo) -> None:
+        if self.update_dialog is not None and self.update_dialog.winfo_exists():
+            return
+        dialog = tk.Toplevel(self.root)
+        self.update_dialog = dialog
+        dialog.overrideredirect(True)
+        dialog.configure(bg=BG)
+        dialog.attributes("-topmost", True)
+        dialog.resizable(False, False)
+        width, height = 320, 150
+        work_area = monitor_work_area(self.root.winfo_id())
+        if work_area is None:
+            left, top, right, bottom = (
+                0,
+                0,
+                self.root.winfo_screenwidth(),
+                self.root.winfo_screenheight(),
+            )
+        else:
+            left, top, right, bottom = work_area
+        x = min(max(self.root.winfo_x() + 35, left), max(left, right - width))
+        y = min(max(self.root.winfo_y() + 35, top), max(top, bottom - height))
+        dialog.geometry(f"{width}x{height}{x:+d}{y:+d}")
+
+        tk.Label(
+            dialog,
+            text=self.t("update_available"),
+            bg=PANEL_HOVER,
+            fg=TEXT,
+            font=("Segoe UI Semibold", 9),
+            padx=12,
+            pady=8,
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            dialog,
+            text=self.t("update_message", version=release.version),
+            bg=BG,
+            fg=TEXT,
+            font=("Segoe UI", 8),
+            wraplength=292,
+            justify="left",
+            padx=14,
+            pady=12,
+        ).pack(fill="x")
+
+        actions = tk.Frame(dialog, bg=BG)
+        actions.pack(fill="x", padx=12, pady=(0, 11))
+        actions.grid_columnconfigure(0, weight=1)
+        actions.grid_columnconfigure(1, weight=1)
+
+        def dismiss() -> None:
+            dialog.destroy()
+            self.update_dialog = None
+
+        def install() -> None:
+            dismiss()
+            self.set_status(self.t("update_downloading"), GOLD)
+
+            def update_worker() -> None:
+                try:
+                    launch_update(release)
+                    self.update_events.put(("launched", release.version))
+                except Exception as error:
+                    self.update_events.put(("error", str(error)))
+
+            threading.Thread(
+                target=update_worker, daemon=True, name="update-download"
+            ).start()
+
+        update_button = RoundedSettingsButton(
+            actions,
+            text=self.t("update_now"),
+            command=install,
+            fill=LIME_DARK,
+            hover_fill="#8da329",
+            outline="#5f7118",
+        )
+        update_button.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+        later_button = RoundedSettingsButton(
+            actions,
+            text=self.t("update_later"),
+            command=dismiss,
+            fill=CELL_FILL,
+            hover_fill=CELL_HOVER,
+            outline=CELL_BORDER,
+        )
+        later_button.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+        dialog.after_idle(lambda: apply_rounded_window(dialog, 6))
+
+    def poll_updates(self) -> None:
+        try:
+            while True:
+                event, payload = self.update_events.get_nowait()
+                if event == "available" and isinstance(payload, ReleaseInfo):
+                    self.show_update_dialog(payload)
+                elif event == "launched":
+                    self.close()
+                    return
+                elif event == "error":
+                    self.set_status(self.t("update_failed", error=payload), RED)
+        except queue.Empty:
+            pass
+
     def set_status(self, text: str, color: str = MUTED) -> None:
         if self.status_popup is None or not self.status_popup.winfo_exists():
             self.status_popup = tk.Toplevel(self.root)
@@ -1793,7 +1932,10 @@ class DofusPanel:
         header.grid(row=0, column=0, columnspan=2, sticky="ew")
         header.grid_propagate(False)
         tk.Label(
-            header, text=f"⚙  {self.t('settings')}", bg=PANEL_HOVER, fg=TEXT,
+            header,
+            text=f"⚙  {self.t('settings')} · v{APP_VERSION}",
+            bg=PANEL_HOVER,
+            fg=TEXT,
             font=("Segoe UI Semibold", 8), padx=10,
         ).pack(side="left", fill="y")
         close_app = tk.Button(
@@ -2212,6 +2354,7 @@ class DofusPanel:
 
     def poll(self) -> None:
         self.poll_inputs()
+        self.poll_updates()
         foreground = int(user32.GetForegroundWindow() or 0)
         if (
             self.pending_activation_handle is None
