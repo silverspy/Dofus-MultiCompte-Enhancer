@@ -11,20 +11,32 @@
 
 ## Français
 
-**Dofus MultiCompte Enhancer** est un compagnon Windows compact conçu pour simplifier la gestion d'une équipe multi-compte. Sa barre flottante s'intègre visuellement à l'interface de Dofus et regroupe le lancement des comptes, la navigation entre les personnages, la création du groupe et la réplication des actions dans un seul outil discret.
+Pilotez vos comptes Dofus depuis une seule barre compacte, pensée pour rester discrète à côté de l'interface du jeu. **Dofus MultiCompte Enhancer** automatise les manipulations répétitives et vous laisse vous concentrer sur votre partie : lancez votre équipe, formez votre groupe, changez de personnage et répliquez vos actions sans jongler manuellement entre quatre fenêtres.
 
-### Fonctions principales
+### Trois fonctions pour gagner du temps à chaque session
 
-| | Fonction | Description |
-|:--:|---|---|
-| 🚀 | **Lancement automatisé** | Ouvre Ankama Launcher, démarre les quatre fenêtres attendues et clique uniquement lorsque les boutons `JOUER` sont réellement disponibles. |
-| 👥 | **Création du groupe** | Identifie les personnages par OCR, envoie les invitations depuis le chef, les accepte et revient automatiquement sur le chef du groupe. |
-| ⚡ | **Navigation instantanée** | Passe d'une fenêtre Dofus à l'autre avec des raccourcis clavier, boutons de souris ou molette entièrement configurables. |
-| 🪞 | **Réplication des actions** | Reproduit à la demande les clics, leurs positions proportionnelles, les déplacements, la molette et les frappes clavier sur les autres fenêtres. |
-| 👑 | **Équipe toujours lisible** | Place le chef en premier, affiche sa couronne et indique immédiatement quel personnage est au premier plan. |
-| 🎨 | **Interface intégrée** | Propose une disposition verticale ou horizontale, des icônes de classe, une échelle et une transparence réglables dans un style proche de Dofus. |
-| 🔒 | **Contrôles personnalisables** | Permet de verrouiller la position ou les icônes, de masquer le bouton Play et de conserver automatiquement tous les réglages. |
-| 🌍 | **Interface bilingue** | L'application peut être utilisée en français ou en anglais depuis le menu des paramètres. |
+#### 🚀 1. Auto-connect et invitations automatiques
+
+Appuyez sur Play et laissez l'outil préparer votre session. Il ouvre Ankama Launcher si nécessaire, démarre les quatre clients, attend que chaque bouton `JOUER` soit réellement disponible, reconnaît vos personnages puis entre en jeu. Votre chef invite ensuite automatiquement les trois autres personnages, chaque invitation est acceptée et vous revenez directement sur la fenêtre du chef.
+
+#### 🪞 2. Répliquez vos actions sur toutes les fenêtres
+
+Activez le mode réplication avec le raccourci de votre choix. Vos clics, leur position proportionnelle, les boutons de souris, la molette et vos frappes clavier sont immédiatement reproduits sur les autres clients. Appuyez de nouveau sur le raccourci pour reprendre un contrôle individuel.
+
+#### ⚡ 3. Changez de fenêtre avec un retour visuel instantané
+
+Passez au personnage précédent ou suivant avec une touche clavier, un bouton de souris ou la molette. La barre met d'abord en évidence le personnage sélectionné, puis affiche sa fenêtre : vous voyez immédiatement où vous allez, sans hésitation ni recherche dans la barre des tâches.
+
+### Une interface faite pour rester à portée de main
+
+| | Vous pouvez… |
+|:--:|---|
+| 👑 | **Repérer immédiatement votre chef et votre fenêtre active** grâce à la couronne, aux icônes de classe et à la surbrillance instantanée. |
+| ↔️ | **Choisir une barre verticale ou horizontale** selon la place disponible autour de votre interface Dofus. |
+| 🎨 | **Ajuster l'échelle et la transparence** pour garder l'outil visible sans masquer votre jeu. |
+| 🔒 | **Verrouiller la barre ou les icônes** afin d'éviter les déplacements involontaires en pleine partie. |
+| 🎛️ | **Configurer chaque raccourci** avec votre clavier, vos boutons de souris ou votre molette. |
+| 🌍 | **Utiliser l'application en français ou en anglais** depuis le menu des paramètres. |
 
 <p align="center">
   <img src="docs/images/toolbar-vertical.png" height="390" alt="Barre verticale avec chef de groupe et personnage actif" />
@@ -62,20 +74,32 @@ L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipel
 
 ## English
 
-**Dofus MultiCompte Enhancer** is a compact Windows companion designed to make multi-account team management effortless. Its floating toolbar blends into the Dofus interface and brings account startup, character switching, group creation, and action mirroring together in one discreet tool.
+Control your Dofus accounts from one compact toolbar designed to sit discreetly beside the game interface. **Dofus MultiCompte Enhancer** handles repetitive setup so you can focus on playing: launch your team, build the group, switch characters, and mirror actions without manually juggling four windows.
 
-### Main features
+### Three features that save time in every session
 
-| | Feature | Description |
-|:--:|---|---|
-| 🚀 | **Automated startup** | Opens Ankama Launcher, starts the four expected windows, and clicks `PLAY` only when each button is genuinely ready. |
-| 👥 | **Automatic group creation** | Identifies characters through OCR, sends invitations from the leader, accepts them, and returns to the group leader. |
-| ⚡ | **Instant window switching** | Moves between Dofus windows using fully configurable keyboard, mouse-button, or wheel shortcuts. |
-| 🪞 | **Action mirroring** | Optionally mirrors clicks, proportional positions, pointer movement, scrolling, and keyboard input across the other windows. |
-| 👑 | **Readable team state** | Keeps the leader first, displays a crown, and immediately highlights the character currently in the foreground. |
-| 🎨 | **Integrated interface** | Offers vertical and horizontal layouts, class icons, scaling, and opacity controls in a Dofus-inspired style. |
-| 🔒 | **Customizable controls** | Locks the panel or character icons, hides the Play button when desired, and automatically preserves every setting. |
-| 🌍 | **Bilingual interface** | Switches the application between French and English directly from the settings panel. |
+#### 🚀 1. Auto-connect and automatic invitations
+
+Press Play and let the tool prepare your session. It opens Ankama Launcher when needed, starts all four clients, waits until every `PLAY` button is genuinely ready, recognizes your characters, and enters the game. Your leader then invites the other three characters automatically, each invitation is accepted, and you return directly to the leader's window.
+
+#### 🪞 2. Mirror your actions across every window
+
+Enable replication with your chosen shortcut. Your clicks, proportional positions, mouse buttons, scrolling, and keyboard input are immediately reproduced in the other clients. Press the shortcut again whenever you want to return to individual control.
+
+#### ⚡ 3. Switch windows with instant visual feedback
+
+Move to the previous or next character with a keyboard key, mouse button, or the wheel. The toolbar highlights your selection before bringing its window forward, so you always know where you are going without searching through the Windows taskbar.
+
+### An interface that stays within reach
+
+| | You can… |
+|:--:|---|
+| 👑 | **Spot your leader and active window instantly** through the crown, class icons, and immediate highlighting. |
+| ↔️ | **Choose a vertical or horizontal toolbar** to fit the available space around your Dofus interface. |
+| 🎨 | **Adjust scale and opacity** to keep the tool visible without covering the game. |
+| 🔒 | **Lock the toolbar or character icons** to prevent accidental movement while playing. |
+| 🎛️ | **Configure every shortcut** using your keyboard, mouse buttons, or wheel. |
+| 🌍 | **Use the application in French or English** from the settings panel. |
 
 ### Download
 
