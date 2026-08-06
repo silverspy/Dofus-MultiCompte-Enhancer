@@ -29,4 +29,26 @@ def test_tagged_builds_create_a_release_from_the_executable() -> None:
     assert "needs: test-and-build" in workflow
     assert "gh release create" in workflow
     assert '"release/Dofus-MultiCompte-Enhancer.exe"' in workflow
+    assert '"release/Dofus-MultiCompte-Enhancer-Portable.zip"' in workflow
+    assert '"release/Dofus-MultiCompte-Enhancer-Setup.exe"' in workflow
     assert "--verify-tag" in workflow
+
+
+def test_installer_creates_shortcuts_and_an_uninstaller() -> None:
+    installer = (ROOT / "installer/Dofus-MultiCompte-Enhancer.iss").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Uninstallable=yes" in installer
+    assert "DefaultDirName={localappdata}\\Programs\\{#MyAppName}" in installer
+    assert "{group}\\{#MyAppName}" in installer
+    assert "{autodesktop}\\{#MyAppName}" in installer
+    assert "{uninstallexe}" in installer
+
+
+def test_character_workflow_has_no_fixed_four_account_requirement() -> None:
+    source = (ROOT / "app/dofus_character_login.py").read_text(encoding="utf-8")
+
+    assert "wait_for_exactly_four_windows" not in source
+    assert "len(windows) < 4" not in source
+    assert '"account_count": len(players)' in source

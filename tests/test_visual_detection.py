@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
+import dofus_character_login
 from chat_vision import detect_chat_bar
 from dofus_character_login import (
     detect_invitation_accept_button,
@@ -51,6 +52,66 @@ def test_invitation_accept_button_is_detected_in_expected_panel() -> None:
     assert button is not None
     assert 95 <= button.click_x <= 105
     assert 187 <= button.click_y <= 195
+
+
+def test_invitation_accept_button_can_be_detected_anywhere() -> None:
+    image = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    cv2.rectangle(image, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
+
+    button = detect_invitation_accept_button(image)
+
+    assert button is not None
+    assert 735 <= button.click_x <= 745
+    assert 325 <= button.click_y <= 332
+
+
+def test_invitation_ocr_rejects_unrelated_green_action() -> None:
+    image = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    cv2.rectangle(image, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
+
+    assert (
+        detect_invitation_accept_button(image, FakeOcr(["ACHETER"], [0.99]))
+        is None
+    )
+
+
+def test_account_count_is_inferred_after_window_set_stabilizes(monkeypatch) -> None:
+    observations = iter(
+        [
+            [],
+            [(101, "Account one")],
+            [(101, "Account one"), (202, "Account two")],
+        ]
+    )
+    latest = [(101, "Account one"), (202, "Account two")]
+    launches: list[bool] = []
+    clock = {"now": 0.0}
+
+    def list_windows() -> list[tuple[int, str]]:
+        return next(observations, latest)
+
+    def sleep(seconds: float) -> None:
+        clock["now"] += seconds
+
+    monkeypatch.setattr(dofus_character_login, "list_dofus_windows", list_windows)
+    monkeypatch.setattr(
+        dofus_character_login,
+        "launch_dofus",
+        lambda **_kwargs: launches.append(True),
+    )
+    monkeypatch.setattr(dofus_character_login.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(dofus_character_login.time, "sleep", sleep)
+
+    windows = dofus_character_login.wait_for_dofus_windows(
+        initial_wait=0.0,
+        launch_wait=20.0,
+        stability_wait=1.0,
+    )
+
+    assert windows == latest
+    assert launches == [True]
 
 
 def test_start_play_requires_green_button_and_jouer_text() -> None:

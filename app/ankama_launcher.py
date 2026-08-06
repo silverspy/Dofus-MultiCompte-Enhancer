@@ -260,7 +260,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher-path", type=Path, default=DEFAULT_LAUNCHER)
     parser.add_argument("--assets-dir", type=Path, default=DEFAULT_ASSETS)
-    parser.add_argument("--image", type=Path, help="tester une capture sans ouvrir le launcher")
+    parser.add_argument("--image", type=Path, help="test a screenshot without opening the launcher")
     parser.add_argument("--timeout", type=float, default=2700.0, help="maximum wait time in seconds")
     parser.add_argument("--poll", type=float, default=5.0, help="polling interval")
     parser.add_argument("--dry-run", action="store_true", help="detect without clicking")

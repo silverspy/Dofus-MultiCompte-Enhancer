@@ -1,4 +1,4 @@
-"""Process four Dofus windows at the character-selection screen.
+"""Process every Dofus window opened for the selected Ankama accounts.
 
 The program first opens missing windows through Ankama Launcher, reads each
 selected character name with local OCR, validates the PLAY button, and enters
@@ -215,13 +215,13 @@ def try_click_start_play(
     return button
 
 
-def detect_invitation_accept_button(image: np.ndarray) -> InvitationButton | None:
-    """Locate the green ACCEPT button in the invitation panel on the left."""
+def detect_invitation_accept_button(
+    image: np.ndarray,
+    ocr: RapidOCR | None = None,
+) -> InvitationButton | None:
+    """Locate an invitation ACCEPT button anywhere in the client area."""
     height, width = image.shape[:2]
-    x0, x1 = 0, int(width * 0.20)
-    y0, y1 = int(height * 0.20), int(height * 0.48)
-    roi = image[y0:y1, x0:x1]
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
     # The button is saturated, yellow-green, and horizontal. A light closing
     # operation combines its bright letters and background variations.
@@ -236,31 +236,61 @@ def detect_invitation_accept_button(image: np.ndarray) -> InvitationButton | Non
         relative_width = candidate_width / width
         relative_height = candidate_height / height
         aspect = candidate_width / max(1, candidate_height)
-        center_x = x0 + x + candidate_width // 2
-        center_y = y0 + y + candidate_height // 2
+        center_x = x + candidate_width // 2
+        center_y = y + candidate_height // 2
 
         if not (0.035 <= relative_width <= 0.080):
             continue
         if not (0.010 <= relative_height <= 0.040 and 2.5 <= aspect <= 9.0):
             continue
-        if not (0.07 <= center_x / width <= 0.15):
-            continue
-        if not (0.27 <= center_y / height <= 0.39):
-            continue
-
-        # The button must belong to the dark invitation panel.
-        panel_x0 = max(0, center_x - int(width * 0.09))
-        panel_x1 = min(width, center_x + int(width * 0.04))
-        panel_y0 = max(0, center_y - int(height * 0.07))
-        panel_y1 = min(height, center_y + int(height * 0.02))
+        # The button must belong to a dark invitation panel, regardless of where
+        # that panel was moved by the user.
+        panel_x0 = max(0, x - candidate_width)
+        panel_x1 = min(width, x + candidate_width * 2)
+        panel_y0 = max(0, y - candidate_height * 5)
+        panel_y1 = min(height, y + candidate_height * 2)
         panel = image[panel_y0:panel_y1, panel_x0:panel_x1]
         dark_ratio = float(np.mean(panel.mean(axis=2) < 105)) if panel.size else 0.0
         if dark_ratio < 0.35:
             continue
 
-        center_score = max(0.0, 1.0 - abs(center_x / width - 0.109) / 0.05)
+        text_score = 0.0
+        if ocr is not None:
+            candidate = image[y:y + candidate_height, x:x + candidate_width]
+            enlarged = cv2.resize(
+                candidate, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC
+            )
+            result = ocr(enlarged)
+            recognized = [
+                (re.sub(r"[^A-Z]", "", str(text).upper()), float(score))
+                for text, score in zip(
+                    result.txts or [], result.scores or [], strict=True
+                )
+            ]
+            text_score = max(
+                (
+                    score
+                    for text, score in recognized
+                    if text in {"ACCEPTER", "ACCEPT"}
+                ),
+                default=0.0,
+            )
+            # Reject a clearly readable unrelated action, but retain the visual
+            # fallback when the small stylized label cannot be read at all.
+            if text_score < 0.55 and any(score >= 0.70 for _text, score in recognized):
+                continue
+
         shape_score = max(0.0, 1.0 - abs(aspect - 5.0) / 5.0)
-        confidence = min(1.0, 0.45 * dark_ratio + 0.30 * center_score + 0.25 * shape_score)
+        green_ratio = float(
+            np.mean(mask[y:y + candidate_height, x:x + candidate_width] > 0)
+        )
+        confidence = min(
+            1.0,
+            0.35 * dark_ratio
+            + 0.25 * shape_score
+            + 0.20 * min(1.0, green_ratio / 0.55)
+            + 0.20 * text_score,
+        )
         candidates.append(
             (confidence, InvitationButton(center_x, center_y, confidence))
         )
@@ -271,6 +301,7 @@ def detect_invitation_accept_button(image: np.ndarray) -> InvitationButton | Non
 def accept_group_invitation(
     player: PlayerWindow,
     *,
+    ocr: RapidOCR | None = None,
     timeout: float = 60.0,
     poll_interval: float = 0.35,
 ) -> InvitationButton:
@@ -285,7 +316,7 @@ def accept_group_invitation(
             if title.casefold().startswith(player.pseudo.casefold())
         ]
         if len(matches) != 1:
-            visible = ", ".join(title or str(candidate) for candidate, title in windows) or "aucune"
+            visible = ", ".join(title or str(candidate) for candidate, title in windows) or "none"
             raise RuntimeError(
                 f"Current window for {player.pseudo} was not found "
                 f"(visible Dofus windows: {visible})."
@@ -295,7 +326,7 @@ def accept_group_invitation(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         image, _, _ = capture_window(hwnd)
-        button = detect_invitation_accept_button(image)
+        button = detect_invitation_accept_button(image, ocr)
         if button is not None:
             detected_button = button
             # Confirm the click as well: a simultaneous focus change could make
@@ -306,7 +337,7 @@ def accept_group_invitation(
                 click_screen(origin_x + button.click_x, origin_y + button.click_y)
                 time.sleep(0.25)
                 verification, _, _ = capture_window(hwnd)
-                remaining = detect_invitation_accept_button(verification)
+                remaining = detect_invitation_accept_button(verification, ocr)
                 if remaining is None:
                     return detected_button
                 button = remaining
@@ -320,13 +351,19 @@ def list_dofus_windows() -> list[tuple[int, str]]:
     return list_windows_by_executable("Dofus.exe")
 
 
-def wait_for_exactly_four_windows(
+def wait_for_dofus_windows(
     *,
     initial_wait: float = 0.0,
     launch_wait: float = 180.0,
-    max_launch_attempts: int = 2,
+    stability_wait: float = 5.0,
+    expected_count: int | None = None,
 ) -> list[tuple[int, str]]:
-    """Wait for existing windows, then relaunch from Ankama when necessary."""
+    """Detect the selected account count from the windows Ankama launches.
+
+    Ankama Launcher already knows which accounts are selected. The application
+    therefore clicks PLAY once and treats the window count as final after it has
+    remained unchanged for ``stability_wait`` seconds.
+    """
     poll_interval = 0.5
     last_count: int | None = None
 
@@ -334,40 +371,49 @@ def wait_for_exactly_four_windows(
         nonlocal last_count
         current = list_dofus_windows()
         if len(current) != last_count:
-            print(f"Visible Dofus windows: {len(current)}/4", flush=True)
+            print(f"Visible Dofus windows: {len(current)}", flush=True)
             last_count = len(current)
         return current
 
     initial_deadline = time.monotonic() + max(0.0, initial_wait)
     while time.monotonic() < initial_deadline:
         windows = observe()
-        if len(windows) >= 4:
+        if windows:
             break
         time.sleep(poll_interval)
     else:
         windows = observe()
 
-    attempts = 0
-    while len(windows) < 4 and attempts < max_launch_attempts:
-        missing = 4 - len(windows)
-        print(
-            f"Only {len(windows)} Dofus window(s); starting more through Ankama Launcher "
-            f"({missing} manquante(s)).",
-            flush=True,
-        )
+    expected_count = expected_count if expected_count and expected_count > 0 else None
+    if windows and expected_count is not None and len(windows) >= expected_count:
+        print(f"Detected {len(windows)} known account(s).", flush=True)
+        return windows
+
+    should_launch = not windows or (
+        expected_count is not None and len(windows) < expected_count
+    )
+    if should_launch:
+        print("Starting the selected Ankama accounts.", flush=True)
         launch_dofus(poll_interval=1.0)
         print("Launcher clicked; waiting for Dofus windows...", flush=True)
-        attempts += 1
-        deadline = time.monotonic() + launch_wait
-        while time.monotonic() < deadline:
-            time.sleep(poll_interval)
-            windows = observe()
-            if len(windows) >= 4:
-                break
 
-    if len(windows) != 4:
-        raise RuntimeError(f"Four Dofus windows are required; detected {len(windows)}.")
-    return windows
+    deadline = time.monotonic() + launch_wait
+    stable_since: float | None = None
+    last_handles: tuple[int, ...] = ()
+    while time.monotonic() < deadline:
+        windows = observe()
+        handles = tuple(sorted(hwnd for hwnd, _title in windows))
+        now = time.monotonic()
+        if handles and handles != last_handles:
+            last_handles = handles
+            stable_since = now
+        elif handles and stable_since is not None:
+            if now - stable_since >= max(0.5, stability_wait):
+                print(f"Detected {len(windows)} selected account(s).", flush=True)
+                return windows
+        time.sleep(poll_interval)
+
+    raise RuntimeError("No stable set of Dofus windows was detected before the timeout.")
 
 
 def save_character_diagnostic(
@@ -498,7 +544,7 @@ def process_character_window(
     )
 
 
-def login_four_characters(
+def login_characters(
     *,
     output_path: Path,
     assets_dir: Path = DEFAULT_ASSETS,
@@ -517,15 +563,28 @@ def login_four_characters(
     if template is None:
         raise RuntimeError("Character PLAY button template was not found.")
     # Load OCR models in parallel while Dofus/Ankama starts.
+    previous_payload: dict[str, object] = {}
+    if output_path.is_file():
+        try:
+            loaded_payload = json.loads(output_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_payload, dict):
+                previous_payload = loaded_payload
+        except (OSError, ValueError):
+            previous_payload = {}
+    saved_count = previous_payload.get("account_count")
+    expected_count = int(saved_count) if isinstance(saved_count, int) and saved_count > 0 else None
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="rapidocr") as executor:
         ocr_future = executor.submit(RapidOCR)
         windows_started = time.monotonic()
-        windows = wait_for_exactly_four_windows(initial_wait=initial_wait)
-        timings["four_windows_ready_seconds"] = round(
+        windows = wait_for_dofus_windows(
+            initial_wait=initial_wait,
+            expected_count=expected_count,
+        )
+        timings["windows_ready_seconds"] = round(
             time.monotonic() - windows_started, 3
         )
         print(
-            f"Four windows ready in {timings['four_windows_ready_seconds']:.3f}s.",
+            f"{len(windows)} window(s) ready in {timings['windows_ready_seconds']:.3f}s.",
             flush=True,
         )
         ocr = ocr_future.result()
@@ -537,7 +596,7 @@ def login_four_characters(
     processing_seconds = {hwnd: 0.0 for _, hwnd, _ in pending}
     startup_clicked: set[int] = set()
     deadline = character_phase_started + selection_timeout
-    print("Scanning the four character-selection screens...", flush=True)
+    print(f"Scanning {len(windows)} character-selection screen(s)...", flush=True)
     while pending and time.monotonic() < deadline:
         progress = False
         for index, hwnd, title in list(pending):
@@ -608,8 +667,14 @@ def login_four_characters(
             None,
         )
         if leader_player is None:
-            names = ", ".join(player.pseudo for player in players)
-            raise RuntimeError(f"Leader character {leader!r} was not found among: {names}")
+            if not players:
+                raise RuntimeError("No character was detected.")
+            leader_player = players[0]
+            leader = leader_player.pseudo
+            print(
+                f"Configured leader was not found; using {leader_player.pseudo}.",
+                flush=True,
+            )
 
         targets = [
             player for player in players
@@ -631,8 +696,8 @@ def login_four_characters(
             invitations.append(invitation)
 
             # Confirm each command by waiting for the ACCEPT button to appear.
-            # En cas de course de focus/chargement, seule l'invitation fautive
-            # Only the failed invitation is retried instead of restarting the group.
+            # If focus or loading races with the command, retry only the failed
+            # invitation instead of restarting the whole group.
             attempt_timeouts = (3.0, 6.0, max(8.0, invitation_timeout))
             for attempt, accept_timeout in enumerate(attempt_timeouts, start=1):
                 send_started = time.monotonic()
@@ -648,13 +713,15 @@ def login_four_characters(
                 invitation["attempts"] = attempt
                 print(
                     f"  Invitation sent to {target.pseudo}"
-                    f" (tentative {attempt}/3).",
+                    f" (attempt {attempt}/3).",
                     flush=True,
                 )
 
                 accept_started = time.monotonic()
                 try:
-                    button = accept_group_invitation(target, timeout=accept_timeout)
+                    button = accept_group_invitation(
+                        target, ocr=ocr, timeout=accept_timeout
+                    )
                 except TimeoutError:
                     invitation_accept_seconds += time.monotonic() - accept_started
                     if attempt == len(attempt_timeouts):
@@ -693,6 +760,7 @@ def login_four_characters(
 
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "account_count": len(players),
         "leader": leader,
         "players": [asdict(player) for player in players],
         "invitations": invitations,
@@ -772,15 +840,16 @@ def accept_saved_invitations(output_path: Path, timeout: float) -> int:
     leader = str(payload.get("leader", "Silvcra"))
     players = [PlayerWindow(**item) for item in payload.get("players", [])]
     targets = [player for player in players if player.pseudo.casefold() != leader.casefold()]
-    if len(targets) != 3:
-        raise RuntimeError(f"Expected three invited characters; found {len(targets)}.")
+    if not targets:
+        return 0
 
     invitations_by_target = {
         str(item.get("target", "")).casefold(): item
         for item in payload.get("invitations", [])
     }
+    ocr = RapidOCR()
     for target in targets:
-        button = accept_group_invitation(target, timeout=timeout)
+        button = accept_group_invitation(target, ocr=ocr, timeout=timeout)
         invitation = invitations_by_target.setdefault(
             target.pseudo.casefold(),
             {"target": target.pseudo, "command": f"/invite {target.pseudo}", "sent": True},
@@ -799,18 +868,18 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=Path(__file__).with_name("players.json"))
     parser.add_argument("--assets-dir", type=Path, default=DEFAULT_ASSETS)
     parser.add_argument("--diagnostics-dir", type=Path, default=Path(__file__).with_name("character-diagnostics"))
-    parser.add_argument("--dry-run", action="store_true", help="lire et valider sans cliquer")
+    parser.add_argument("--dry-run", action="store_true", help="read and validate without clicking")
     parser.add_argument("--initial-wait", type=float, default=0.0)
     parser.add_argument("--selection-timeout", type=float, default=120.0)
     parser.add_argument("--leader", default="Silvcra", help="character that invites the group")
-    parser.add_argument("--skip-invites", action="store_true", help="ne pas envoyer les invitations")
+    parser.add_argument("--skip-invites", action="store_true", help="do not send invitations")
     parser.add_argument("--chat-timeout", type=float, default=180.0)
     parser.add_argument("--invitation-timeout", type=float, default=60.0)
     parser.add_argument("--image", type=Path, help="test a screenshot without controlling Windows")
-    parser.add_argument("--start-image", type=Path, help="tester le JOUER central sur une capture")
-    parser.add_argument("--invitation-image", type=Path, help="tester ACCEPTER sur une capture")
+    parser.add_argument("--start-image", type=Path, help="test central PLAY on a screenshot")
+    parser.add_argument("--invitation-image", type=Path, help="test ACCEPT on a screenshot")
     parser.add_argument("--accept-pending", action="store_true", help="accept invitations already received")
-    parser.add_argument("--diagnostic", type=Path, help="diagnostic pour --image")
+    parser.add_argument("--diagnostic", type=Path, help="diagnostic output for --image")
     return parser.parse_args()
 
 
@@ -833,7 +902,7 @@ def main() -> int:
             diagnostic_path=args.diagnostic,
         )
     try:
-        players = login_four_characters(
+        players = login_characters(
             output_path=args.output,
             assets_dir=args.assets_dir,
             dry_run=args.dry_run,

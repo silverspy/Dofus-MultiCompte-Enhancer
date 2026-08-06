@@ -24,6 +24,8 @@ def test_ui_translation_supports_french_and_english() -> None:
         == "REPLICATION ENABLED · 3 TARGETS"
     )
     assert dofus_panel.translate("unknown", "save") == "ENREGISTRER"
+    assert dofus_panel.translate("fr", "update_now") == "METTRE À JOUR"
+    assert dofus_panel.translate("en", "update_now") == "UPDATE NOW"
 
 
 def test_english_mode_translates_input_names_without_changing_bindings() -> None:
