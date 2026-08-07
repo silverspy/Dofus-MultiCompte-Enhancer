@@ -28,26 +28,22 @@ def test_tagged_builds_create_a_release_from_the_executable() -> None:
     assert 'tags: ["v*"]' in workflow
     assert "needs: test-and-build" in workflow
     assert "gh release create" in workflow
-    assert '"release/Dofus-MultiCompte-Enhancer.exe"' in workflow
-    assert '"release/Dofus-MultiCompte-Enhancer-Portable.zip"' in workflow
+    assert '"release/Dofus-MultiCompte-Enhancer-Portable.exe"' in workflow
     assert '"release/Dofus-MultiCompte-Enhancer-Setup.exe"' in workflow
-    assert '"release/SHA256SUMS.txt"' in workflow
+    assert '"release/Dofus-MultiCompte-Enhancer-Portable.zip"' not in workflow
+    assert '"release/Dofus-MultiCompte-Enhancer.exe"' not in workflow
+    assert "SHA256SUMS.txt" not in workflow
     assert "--verify-tag" in workflow
 
 
-def test_release_packages_have_checksums_and_github_attestations() -> None:
+def test_release_packages_have_github_attestations() -> None:
     workflow = (ROOT / ".github/workflows/windows-build.yml").read_text(
         encoding="utf-8"
     )
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert "Get-FileHash" in workflow
-    assert "SHA256SUMS.txt" in workflow
     assert "uses: actions/attest@v4" in workflow
     assert "id-token: write" in workflow
     assert "attestations: write" in workflow
     assert "artifact-metadata: write" in workflow
-    assert "gh attestation verify" in readme
 
 
 def test_installer_creates_shortcuts_and_an_uninstaller() -> None:

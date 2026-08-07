@@ -17,7 +17,7 @@ from pathlib import Path
 REPOSITORY = "silverspy/Dofus-MultiCompte-Enhancer"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 SETUP_ASSET = "Dofus-MultiCompte-Enhancer-Setup.exe"
-PORTABLE_ASSET = "Dofus-MultiCompte-Enhancer-Portable.zip"
+PORTABLE_ASSET = "Dofus-MultiCompte-Enhancer-Portable.exe"
 
 
 @dataclass(frozen=True)
@@ -123,20 +123,16 @@ def download_asset(asset: ReleaseAsset, destination: Path) -> Path:
 def _write_portable_update_script(path: Path) -> None:
     script = r'''param(
     [int]$ProcessId,
-    [string]$Archive,
+    [string]$Package,
     [string]$Destination,
     [string]$ExecutableName
 )
 $ErrorActionPreference = "Stop"
 Wait-Process -Id $ProcessId -ErrorAction SilentlyContinue
-$extractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("dmce-" + [guid]::NewGuid())
-Expand-Archive -LiteralPath $Archive -DestinationPath $extractDirectory -Force
-$source = Join-Path $extractDirectory $ExecutableName
 $target = Join-Path $Destination $ExecutableName
-Copy-Item -LiteralPath $source -Destination $target -Force
+Copy-Item -LiteralPath $Package -Destination $target -Force
 Start-Process -FilePath $target -WorkingDirectory $Destination
-Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $extractDirectory -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $Package -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 '''
     path.write_text(script, encoding="utf-8-sig")
@@ -189,7 +185,7 @@ def launch_update(
             str(script_path),
             "-ProcessId",
             str(os.getpid()),
-            "-Archive",
+            "-Package",
             str(package),
             "-Destination",
             str(current_executable.parent),

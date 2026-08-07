@@ -102,8 +102,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Copy-Item -LiteralPath "dist/Dofus-MultiCompte-Enhancer.exe" -Destination "release/Dofus-MultiCompte-Enhancer.exe"
-          Compress-Archive -LiteralPath "dist/Dofus-MultiCompte-Enhancer.exe" -DestinationPath "release/Dofus-MultiCompte-Enhancer-Portable.zip" -Force
+          Copy-Item -LiteralPath "dist/Dofus-MultiCompte-Enhancer.exe" -Destination "release/Dofus-MultiCompte-Enhancer-Portable.exe"
           $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
           if (-not (Test-Path -LiteralPath $compiler)) {
             throw "Inno Setup compiler not found: $compiler"
@@ -134,8 +133,7 @@ jobs:
         shell: pwsh
         run: |
           $packages = @(
-            "release/Dofus-MultiCompte-Enhancer.exe",
-            "release/Dofus-MultiCompte-Enhancer-Portable.zip",
+            "release/Dofus-MultiCompte-Enhancer-Portable.exe",
             "release/Dofus-MultiCompte-Enhancer-Setup.exe"
           )
           foreach ($package in $packages) {
@@ -147,20 +145,6 @@ jobs:
             }
           }
 
-      - name: Generate SHA-256 checksums
-        shell: pwsh
-        run: |
-          $packages = @(
-            "Dofus-MultiCompte-Enhancer.exe",
-            "Dofus-MultiCompte-Enhancer-Portable.zip",
-            "Dofus-MultiCompte-Enhancer-Setup.exe"
-          )
-          $checksums = foreach ($package in $packages) {
-            $hash = (Get-FileHash -LiteralPath "release/$package" -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $package"
-          }
-          $checksums | Set-Content -LiteralPath "release/SHA256SUMS.txt" -Encoding ascii
-
       - name: Verify Authenticode signatures
         if: env.SIGNING_ENABLED == 'true'
         shell: pwsh
@@ -170,7 +154,7 @@ jobs:
             Sort-Object FullName -Descending | `
             Select-Object -First 1 -ExpandProperty FullName
           foreach ($package in @(
-            "release/Dofus-MultiCompte-Enhancer.exe",
+            "release/Dofus-MultiCompte-Enhancer-Portable.exe",
             "release/Dofus-MultiCompte-Enhancer-Setup.exe"
           )) {
             & $signTool verify /pa /all /v $package
@@ -215,10 +199,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" `
-            "release/Dofus-MultiCompte-Enhancer.exe" `
-            "release/Dofus-MultiCompte-Enhancer-Portable.zip" `
+            "release/Dofus-MultiCompte-Enhancer-Portable.exe" `
             "release/Dofus-MultiCompte-Enhancer-Setup.exe" `
-            "release/SHA256SUMS.txt" `
             --repo "${{ github.repository }}" `
             --title "Dofus MultiCompte Enhancer ${{ github.ref_name }}" `
             --generate-notes `
