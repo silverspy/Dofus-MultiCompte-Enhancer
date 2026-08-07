@@ -50,8 +50,15 @@ jobs:
       - name: Run regression tests
         run: python -m pytest -q
 
-      - name: Build the executable
+      - name: Build the portable executable
         run: python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
+
+      - name: Build the fast installed application
+        run: >-
+          python -m PyInstaller --noconfirm --clean
+          --distpath dist-installed
+          --workpath build-installed
+          Dofus-MultiCompte-Enhancer-Onedir.spec
 
       - name: Configure Authenticode signing
         if: env.SIGNING_ENABLED == 'true'
@@ -76,7 +83,7 @@ jobs:
           "SIGN_CERTIFICATE_THUMBPRINT=$($certificate.Thumbprint)" | `
             Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
 
-      - name: Sign the application executable
+      - name: Sign the application executables
         if: env.SIGNING_ENABLED == 'true'
         shell: pwsh
         run: |
@@ -87,15 +94,21 @@ jobs:
           if (-not $signTool) {
             throw "SignTool was not found on the Windows runner."
           }
-          & $signTool sign `
-            /sha1 $env:SIGN_CERTIFICATE_THUMBPRINT `
-            /fd SHA256 `
-            /tr http://timestamp.digicert.com `
-            /td SHA256 `
-            /d "Dofus MultiCompte Enhancer" `
-            "dist/Dofus-MultiCompte-Enhancer.exe"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Authenticode signing failed for the application executable."
+          $executables = @(
+            "dist/Dofus-MultiCompte-Enhancer.exe",
+            "dist-installed/Dofus-MultiCompte-Enhancer/Dofus-MultiCompte-Enhancer.exe"
+          )
+          foreach ($executable in $executables) {
+            & $signTool sign `
+              /sha1 $env:SIGN_CERTIFICATE_THUMBPRINT `
+              /fd SHA256 `
+              /tr http://timestamp.digicert.com `
+              /td SHA256 `
+              /d "Dofus MultiCompte Enhancer" `
+              $executable
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode signing failed: $executable"
+            }
           }
 
       - name: Build portable and installer packages

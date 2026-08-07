@@ -8,7 +8,6 @@ without blocking the interface.
 from __future__ import annotations
 
 import ctypes
-import json
 import os
 import queue
 import subprocess
@@ -28,6 +27,8 @@ import pystray
 
 from build_version import APP_VERSION
 from chat_vision import activate_window, list_windows_by_executable
+from localization import INPUT_NAME_EN, LANGUAGE_LABELS, TRANSLATIONS, translate
+from panel_settings import DEFAULT_CONFIG, load_json, load_panel_config, save_json
 from updater import ReleaseInfo, fetch_latest_release, is_newer_release, launch_update
 
 
@@ -46,6 +47,24 @@ CONFIG_PATH = DATA_DIR / "panel_config.json"
 WORKFLOW_PATH = BUNDLE_DIR / "dofus_character_login.py"
 CLASS_SYMBOLS_DIR = ASSETS_DIR / "class-symbols"
 APP_ICON_PATH = ASSETS_DIR / "dofus-multicompteenhancer.ico"
+PANEL_DIAGNOSTICS_PATH = DATA_DIR / "panel-diagnostics.log"
+MINIMUM_VISIBLE_PROFILES = 2
+WORKFLOW_DONE_PREFIX = "__WORKFLOW_DONE__:"
+
+
+def workflow_done_marker(exit_code: int) -> str:
+    """Encode the completed child-process result for the Tk polling queue."""
+    return f"{WORKFLOW_DONE_PREFIX}{exit_code}"
+
+
+def parse_workflow_done_marker(message: str) -> int | None:
+    """Return a queued workflow exit code, or None for regular output."""
+    if not message.startswith(WORKFLOW_DONE_PREFIX):
+        return None
+    try:
+        return int(message.removeprefix(WORKFLOW_DONE_PREFIX))
+    except ValueError:
+        return None
 
 # Uniform blue-black background inspired by small Dofus panels.
 DOFUS_NAVY = "#313445"
@@ -76,159 +95,6 @@ CLASS_NAMES = {
     "cra": "Cra",
     "pandawa": "Pandawa",
 }
-
-DEFAULT_CONFIG = {
-    "language": "fr",
-    "orientation": "vertical",
-    "opacity": 0.94,
-    "position_locked": False,
-    "drag_cells_locked": False,
-    "play_button_enabled": True,
-    "ui_scale": 1.0,
-    "previous_key": "F7",
-    "next_key": "F8",
-    "broadcast_key": "F9",
-    "leader": "Silvcra",
-    "classes": {},
-    "x": 24,
-    "y": 220,
-}
-
-TRANSLATIONS = {
-    "fr": {
-        "settings": "PARAMÈTRES",
-        "layout": "DISPOSITION",
-        "language": "LANGUE",
-        "previous_key": "TOUCHE PRÉCÉDENTE",
-        "next_key": "TOUCHE SUIVANTE",
-        "replication_mode": "MODE RÉPLICATION",
-        "group_leader": "CHEF DU GROUPE",
-        "lock": "VERROUILLER",
-        "position": "Position",
-        "icons": "Icônes",
-        "play_button": "BOUTON PLAY",
-        "enabled": "Activé",
-        "scale": "ÉCHELLE",
-        "opacity": "TRANSPARENCE",
-        "save": "ENREGISTRER",
-        "press_input": "APPUYEZ…",
-        "input_prompt": "CLAVIER, SOURIS OU MOLETTE…",
-        "offline": "{player} hors ligne",
-        "no_window": "AUCUNE FENÊTRE",
-        "replication_no_target": "RÉPLICATION ACTIVÉE · AUCUNE CIBLE",
-        "replication_targets": "RÉPLICATION ACTIVÉE · {count} CIBLES",
-        "replication_disabled": "RÉPLICATION DÉSACTIVÉE",
-        "action_running": "ACTION EN COURS",
-        "starting": "LANCEMENT…",
-        "listener_unavailable": "ÉCOUTEUR INDISPONIBLE: {devices}",
-        "replication_error": "RÉPLICATION: {error}",
-        "done": "TERMINÉ",
-        "error": "ERREUR",
-        "update_available": "MISE À JOUR DISPONIBLE",
-        "update_message": "La version {version} est disponible. Voulez-vous l’installer maintenant ?",
-        "update_now": "METTRE À JOUR",
-        "update_later": "PLUS TARD",
-        "update_downloading": "TÉLÉCHARGEMENT DE LA MISE À JOUR…",
-        "update_failed": "ÉCHEC DE LA MISE À JOUR: {error}",
-        "close_settings": "FERMER LES PARAMÈTRES",
-        "minimize_app": "RÉDUIRE L’APPLICATION",
-        "show_app": "AFFICHER L’APPLICATION",
-        "quit_app": "QUITTER L’APPLICATION",
-    },
-    "en": {
-        "settings": "SETTINGS",
-        "layout": "LAYOUT",
-        "language": "LANGUAGE",
-        "previous_key": "PREVIOUS WINDOW",
-        "next_key": "NEXT WINDOW",
-        "replication_mode": "REPLICATION MODE",
-        "group_leader": "GROUP LEADER",
-        "lock": "LOCK",
-        "position": "Position",
-        "icons": "Icons",
-        "play_button": "PLAY BUTTON",
-        "enabled": "Enabled",
-        "scale": "SCALE",
-        "opacity": "OPACITY",
-        "save": "SAVE",
-        "press_input": "PRESS A KEY…",
-        "input_prompt": "KEYBOARD, MOUSE, OR WHEEL…",
-        "offline": "{player} offline",
-        "no_window": "NO WINDOW",
-        "replication_no_target": "REPLICATION ENABLED · NO TARGET",
-        "replication_targets": "REPLICATION ENABLED · {count} TARGETS",
-        "replication_disabled": "REPLICATION DISABLED",
-        "action_running": "ACTION IN PROGRESS",
-        "starting": "STARTING…",
-        "listener_unavailable": "INPUT LISTENER UNAVAILABLE: {devices}",
-        "replication_error": "REPLICATION: {error}",
-        "done": "DONE",
-        "error": "ERROR",
-        "update_available": "UPDATE AVAILABLE",
-        "update_message": "Version {version} is available. Install it now?",
-        "update_now": "UPDATE NOW",
-        "update_later": "LATER",
-        "update_downloading": "DOWNLOADING UPDATE…",
-        "update_failed": "UPDATE FAILED: {error}",
-        "close_settings": "CLOSE SETTINGS",
-        "minimize_app": "MINIMIZE APPLICATION",
-        "show_app": "SHOW APPLICATION",
-        "quit_app": "QUIT APPLICATION",
-    },
-}
-
-LANGUAGE_LABELS = {"fr": "Français", "en": "English"}
-INPUT_NAME_EN = {
-    "CLAVIER": "KEYBOARD",
-    "SOURIS": "MOUSE",
-    "SOURIS GAUCHE": "LEFT MOUSE",
-    "SOURIS DROITE": "RIGHT MOUSE",
-    "SOURIS MILIEU": "MIDDLE MOUSE",
-    "SOURIS 4": "MOUSE 4",
-    "SOURIS 5": "MOUSE 5",
-    "MOLETTE HAUT": "WHEEL UP",
-    "MOLETTE BAS": "WHEEL DOWN",
-    "MOLETTE DROITE": "WHEEL RIGHT",
-    "MOLETTE GAUCHE": "WHEEL LEFT",
-    "RETOUR ARRIÈRE": "BACKSPACE",
-    "ENTRÉE": "ENTER",
-    "MAJ": "SHIFT",
-    "VERR MAJ": "CAPS LOCK",
-    "ESPACE": "SPACE",
-    "FIN": "END",
-    "DÉBUT": "HOME",
-    "GAUCHE": "LEFT",
-    "HAUT": "UP",
-    "DROITE": "RIGHT",
-    "BAS": "DOWN",
-    "IMPR ÉCRAN": "PRINT SCREEN",
-    "SUPPR": "DELETE",
-    "WINDOWS GAUCHE": "LEFT WINDOWS",
-    "WINDOWS DROITE": "RIGHT WINDOWS",
-    "VERR NUM": "NUM LOCK",
-    "ARRÊT DÉFIL": "SCROLL LOCK",
-    "MAJ GAUCHE": "LEFT SHIFT",
-    "MAJ DROITE": "RIGHT SHIFT",
-    "CTRL GAUCHE": "LEFT CTRL",
-    "CTRL DROITE": "RIGHT CTRL",
-    "ALT GAUCHE": "LEFT ALT",
-    "ALT DROITE": "RIGHT ALT",
-    "NAV PRÉCÉDENT": "BROWSER BACK",
-    "NAV SUIVANT": "BROWSER FORWARD",
-    "NAV ACTUALISER": "BROWSER REFRESH",
-    "MUET": "MUTE",
-    "MÉDIA SUIVANT": "NEXT TRACK",
-    "MÉDIA PRÉCÉDENT": "PREVIOUS TRACK",
-    "MÉDIA STOP": "STOP MEDIA",
-    "MÉDIA PLAY/PAUSE": "PLAY/PAUSE MEDIA",
-}
-
-
-def translate(language: str, key: str, **values: object) -> str:
-    """Return a localized UI string and fall back to French for unknown locales."""
-    locale = language if language in TRANSLATIONS else "fr"
-    template = TRANSLATIONS[locale].get(key, TRANSLATIONS["fr"].get(key, key))
-    return template.format(**values)
 
 WH_KEYBOARD_LL = 13
 WH_MOUSE_LL = 14
@@ -282,10 +148,13 @@ WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
 SW_HIDE = 0
 SW_SHOW = 5
+DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWCP_ROUNDSMALL = 3
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
 
 user32.SendMessageW.restype = wintypes.LPARAM
 user32.GetDC.restype = wintypes.HDC
@@ -308,6 +177,13 @@ gdi32.CreateRoundRectRgn.restype = wintypes.HRGN
 gdi32.CreateRoundRectRgn.argtypes = [
     ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
 ]
+dwmapi.DwmSetWindowAttribute.argtypes = [
+    wintypes.HWND,
+    wintypes.DWORD,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+]
+dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
 if hasattr(user32, "GetClassLongPtrW"):
     user32.GetClassLongPtrW.restype = ctypes.c_void_p
 
@@ -469,6 +345,137 @@ class Player:
     saved_handle: int
     handle: int | None = None
     class_name: str = ""
+    placeholder: bool = False
+
+
+@dataclass
+class SettingsVariables:
+    orientation: tk.StringVar
+    language: tk.StringVar
+    previous: tk.StringVar
+    following: tk.StringVar
+    broadcast: tk.StringVar
+    leader: tk.StringVar
+    opacity: tk.DoubleVar
+    position_locked: tk.BooleanVar
+    drag_cells_locked: tk.BooleanVar
+    play_button_enabled: tk.BooleanVar
+    ui_scale: tk.DoubleVar
+
+    @classmethod
+    def from_panel(
+        cls,
+        master: tk.Misc,
+        panel: "DofusPanel",
+    ) -> "SettingsVariables":
+        config = panel.config_data
+        return cls(
+            orientation=tk.StringVar(master, value=str(config["orientation"])),
+            language=tk.StringVar(master, value=LANGUAGE_LABELS[panel.language()]),
+            previous=tk.StringVar(master, value=str(config["previous_key"])),
+            following=tk.StringVar(master, value=str(config["next_key"])),
+            broadcast=tk.StringVar(master, value=str(config["broadcast_key"])),
+            leader=tk.StringVar(master, value=str(config["leader"])),
+            opacity=tk.DoubleVar(master, value=float(config["opacity"])),
+            position_locked=tk.BooleanVar(
+                master, value=bool(config.get("position_locked", False))
+            ),
+            drag_cells_locked=tk.BooleanVar(
+                master, value=bool(config.get("drag_cells_locked", False))
+            ),
+            play_button_enabled=tk.BooleanVar(
+                master, value=bool(config.get("play_button_enabled", True))
+            ),
+            ui_scale=tk.DoubleVar(master, value=panel.ui_scale()),
+        )
+
+    def config_updates(self) -> dict[str, object]:
+        language = next(
+            (
+                code
+                for code, label in LANGUAGE_LABELS.items()
+                if label == self.language.get()
+            ),
+            "fr",
+        )
+        return {
+            "orientation": self.orientation.get(),
+            "previous_key": self.previous.get(),
+            "next_key": self.following.get(),
+            "broadcast_key": self.broadcast.get(),
+            "leader": self.leader.get(),
+            "opacity": self.opacity.get(),
+            "language": language,
+            "position_locked": bool(self.position_locked.get()),
+            "drag_cells_locked": bool(self.drag_cells_locked.get()),
+            "play_button_enabled": bool(self.play_button_enabled.get()),
+            "ui_scale": float(self.ui_scale.get()),
+        }
+
+
+def players_with_placeholders(
+    players: list[Player],
+    minimum: int = MINIMUM_VISIBLE_PROFILES,
+) -> list[Player]:
+    """Return display-only placeholders without modifying the real player list."""
+    visible_players = list(players)
+    missing = max(0, minimum - len(visible_players))
+    visible_players.extend(
+        Player("", 0, placeholder=True)
+        for _index in range(missing)
+    )
+    return visible_players
+
+
+def sort_players_for_panel(
+    players: list[Player],
+    saved_order: object,
+    leader_name: str,
+) -> list[Player]:
+    """Apply the saved icon order while keeping the configured leader first."""
+    order = saved_order if isinstance(saved_order, list) else []
+    rank = {
+        str(name).casefold(): index
+        for index, name in enumerate(order)
+        if str(name).strip()
+    }
+    fallback = len(rank)
+    leader_key = leader_name.strip().casefold()
+    return sorted(
+        players,
+        key=lambda player: (
+            0 if leader_key and player.pseudo.casefold() == leader_key else 1,
+            rank.get(player.pseudo.casefold(), fallback),
+        ),
+    )
+
+
+def reorder_players(
+    players: list[Player],
+    source: Player,
+    target_index: int,
+    leader_name: str,
+) -> list[Player]:
+    """Move one player to a display slot without moving the leader from first."""
+    reordered = list(players)
+    if source not in reordered or len(reordered) < 2:
+        return reordered
+    leader_key = leader_name.strip().casefold()
+    source_is_leader = bool(
+        leader_key and source.pseudo.casefold() == leader_key
+    )
+    leader_present = any(
+        leader_key and player.pseudo.casefold() == leader_key
+        for player in reordered
+    )
+    target_index = max(0, min(int(target_index), len(reordered) - 1))
+    if source_is_leader:
+        target_index = 0
+    elif leader_present:
+        target_index = max(1, target_index)
+    reordered.remove(source)
+    reordered.insert(target_index, source)
+    return reordered
 
 
 @dataclass(frozen=True)
@@ -491,20 +498,13 @@ class BroadcastKeyboardAction:
     modifiers: tuple[int, ...]
 
 
-def load_json(path: Path, fallback: dict) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return dict(fallback)
-
-
-def save_json(path: Path, payload: dict) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
     """Return the usable area of the monitor containing the window."""
-    monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+    # Tk exposes the inner client handle.  MonitorFromWindow must receive the
+    # native top-level wrapper, otherwise multi-monitor/DPI setups may select a
+    # different screen and place the settings dialog far from the panel.
+    native_handle = int(user32.GetParent(hwnd) or hwnd)
+    monitor = user32.MonitorFromWindow(native_handle, MONITOR_DEFAULTTONEAREST)
     if not monitor:
         return None
     info = MONITORINFO()
@@ -515,25 +515,217 @@ def monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
     return int(work.left), int(work.top), int(work.right), int(work.bottom)
 
 
-def apply_rounded_window(window: tk.Misc, diameter: int = 6) -> None:
-    """Apply a subtle Win32 rounded region to a borderless window."""
+def native_toplevel_handle(window: tk.Misc) -> int:
+    """Return Tk's native top-level wrapper instead of its client child."""
+    inner_handle = int(window.winfo_id())
+    return int(user32.GetParent(inner_handle) or inner_handle)
+
+
+def apply_rounded_window(window: tk.Misc, diameter: int = 4) -> None:
+    """Use native antialiased corners, with a subtle legacy fallback."""
     window.update_idletasks()
+    native_handle = native_toplevel_handle(window)
+
+    # A Win32 region is a one-bit mask and therefore creates a visible pixel
+    # staircase at this panel's very small size. Windows 11's DWM corner is
+    # antialiased and also keeps the correct result over bright backgrounds.
+    user32.SetWindowRgn(native_handle, None, True)
+    preference = ctypes.c_int(DWMWCP_ROUNDSMALL)
+    result = dwmapi.DwmSetWindowAttribute(
+        native_handle,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        ctypes.byref(preference),
+        ctypes.sizeof(preference),
+    )
+    if result == 0:
+        return
+
+    # Older Windows versions do not support the DWM attribute. A four-pixel
+    # diameter removes only the extreme corner pixel and avoids a long stair.
     width = max(1, window.winfo_width())
     height = max(1, window.winfo_height())
     region = gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter)
     if not region:
         return
     # Windows owns the region after a successful call.
-    if not user32.SetWindowRgn(window.winfo_id(), region, True):
+    if not user32.SetWindowRgn(native_handle, region, True):
         gdi32.DeleteObject(region)
+
+
+def clamp_window_origin(
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    work_area: tuple[int, int, int, int],
+) -> tuple[int, int]:
+    """Keep a window's full rectangle inside a monitor work area."""
+    left, top, right, bottom = work_area
+    return (
+        min(max(x, left), max(left, right - width)),
+        min(max(y, top), max(top, bottom - height)),
+    )
+
+
+def point_in_rectangle(
+    point: tuple[int, int],
+    rectangle: tuple[int, int, int, int] | None,
+) -> bool:
+    """Return whether a screen point is inside a left/top/right/bottom rectangle."""
+    if rectangle is None:
+        return False
+    x, y = point
+    left, top, right, bottom = rectangle
+    return left <= x < right and top <= y < bottom
+
+
+def position_dialog_near_rectangle(
+    owner: tuple[int, int, int, int],
+    dialog_size: tuple[int, int],
+    work_area: tuple[int, int, int, int],
+    gap: int = 8,
+) -> tuple[int, int]:
+    """Place a dialog beside its owner while keeping it inside one monitor."""
+    owner_left, owner_top, owner_right, _owner_bottom = owner
+    width, height = dialog_size
+    left, top, right, bottom = work_area
+    right_candidate = owner_right + gap
+    left_candidate = owner_left - width - gap
+    if right_candidate + width <= right:
+        x = right_candidate
+    elif left_candidate >= left:
+        x = left_candidate
+    else:
+        x = min(max(owner_left, left), max(left, right - width))
+    y = min(max(owner_top, top), max(top, bottom - height))
+    return x, y
+
+
+def append_panel_diagnostic(event: str, **details: object) -> None:
+    """Record compact UI diagnostics for failures that only occur when frozen."""
+    try:
+        suffix = " ".join(f"{key}={value!r}" for key, value in details.items())
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {event} {suffix}".rstrip()
+        with PANEL_DIAGNOSTICS_PATH.open("a", encoding="utf-8") as stream:
+            stream.write(line + "\n")
+    except OSError:
+        pass
+
+
+def bind_dialog_drag(
+    dialog: tk.Toplevel,
+    handles: tuple[tk.Misc, ...],
+    work_area: tuple[int, int, int, int],
+) -> None:
+    """Make a borderless dialog movable from each supplied drag handle."""
+    drag_origin = [0, 0]
+
+    def start_drag(event: tk.Event) -> None:
+        drag_origin[0] = event.x_root - dialog.winfo_x()
+        drag_origin[1] = event.y_root - dialog.winfo_y()
+
+    def drag(event: tk.Event) -> None:
+        x, y = clamp_window_origin(
+            event.x_root - drag_origin[0],
+            event.y_root - drag_origin[1],
+            dialog.winfo_width(),
+            dialog.winfo_height(),
+            work_area,
+        )
+        dialog.geometry(f"+{x}+{y}")
+
+    for handle in handles:
+        handle.bind("<ButtonPress-1>", start_drag)
+        handle.bind("<B1-Motion>", drag)
+
+
+def fit_dialog_to_content(
+    dialog: tk.Toplevel,
+    width: int,
+    work_area: tuple[int, int, int, int],
+    origin: tuple[int, int] | None = None,
+) -> None:
+    """Shrink a dialog to its requested height and keep it on-screen."""
+    dialog.update_idletasks()
+    left, top, right, bottom = work_area
+    height = max(360, min(dialog.winfo_reqheight(), max(1, bottom - top)))
+    desired_x, desired_y = origin or (dialog.winfo_x(), dialog.winfo_y())
+    x, y = clamp_window_origin(
+        desired_x,
+        desired_y,
+        width,
+        height,
+        work_area,
+    )
+    dialog.geometry(f"{width}x{height}{x:+d}{y:+d}")
+    dialog.after_idle(lambda: apply_rounded_window(dialog, 6))
+
+
+def reveal_dialog(
+    dialog: tk.Toplevel,
+    width: int,
+    work_area: tuple[int, int, int, int],
+    owner: tk.Misc | None = None,
+) -> None:
+    """Finalize, clamp, and force a borderless dialog onto the visible desktop."""
+    if not dialog.winfo_exists():
+        return
+    dialog.update_idletasks()
+    height = max(
+        360,
+        min(dialog.winfo_reqheight(), max(1, work_area[3] - work_area[1])),
+    )
+    origin = None
+    if owner is not None and owner.winfo_exists():
+        origin = position_dialog_near_rectangle(
+            (
+                owner.winfo_rootx(),
+                owner.winfo_rooty(),
+                owner.winfo_rootx() + owner.winfo_width(),
+                owner.winfo_rooty() + owner.winfo_height(),
+            ),
+            (width, height),
+            work_area,
+        )
+    fit_dialog_to_content(dialog, width, work_area, origin)
+    dialog.update_idletasks()
+    dialog.deiconify()
+    dialog.attributes("-topmost", True)
+    dialog.lift()
+    dialog.focus_force()
+    append_panel_diagnostic(
+        "settings_revealed",
+        geometry=dialog.geometry(),
+        requested=(dialog.winfo_reqwidth(), dialog.winfo_reqheight()),
+        state=dialog.state(),
+        viewable=bool(dialog.winfo_viewable()),
+        work_area=work_area,
+    )
+
+
+def configure_settings_style(dialog: tk.Toplevel) -> None:
+    """Apply the shared Dofus palette to native ttk controls."""
+    style = ttk.Style(dialog)
+    style.theme_use("clam")
+    style.configure(
+        "Dark.TCombobox", fieldbackground=CELL_FILL, background=CELL_FILL,
+        foreground=TEXT, arrowcolor=MUTED, bordercolor=CELL_BORDER,
+        lightcolor=CELL_FILL, darkcolor=CELL_FILL, padding=4,
+    )
+    style.map(
+        "Dark.TCombobox",
+        fieldbackground=[("readonly", CELL_FILL)],
+        foreground=[("readonly", TEXT)],
+        selectbackground=[("readonly", CELL_FILL)],
+        selectforeground=[("readonly", TEXT)],
+    )
 
 
 def expose_root_in_taskbar(root: tk.Tk) -> None:
     """Keep the window borderless while creating a taskbar button."""
     root.update_idletasks()
     alpha = float(root.attributes("-alpha"))
-    inner_handle = root.winfo_id()
-    native_handle = int(user32.GetParent(inner_handle) or inner_handle)
+    native_handle = native_toplevel_handle(root)
     style = int(user32.GetWindowLongW(native_handle, GWL_EXSTYLE))
     style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
     user32.SetWindowLongW(native_handle, GWL_EXSTYLE, style)
@@ -544,6 +736,9 @@ def expose_root_in_taskbar(root: tk.Tk) -> None:
     user32.ShowWindow(native_handle, SW_SHOW)
     root.attributes("-topmost", True)
     root.attributes("-alpha", alpha)
+    # Explorer's hide/show refresh can briefly redraw Tk's native wrapper.
+    # Reapply the region afterwards so its square black corners never surface.
+    root.after_idle(lambda: apply_rounded_window(root))
 
 
 def get_window_icon(hwnd: int, size: int = 36) -> Image.Image | None:
@@ -609,6 +804,28 @@ def class_icon_image(class_name: str, size: int = 28) -> Image.Image | None:
         symbol.thumbnail((size, size), Image.Resampling.LANCZOS)
         image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         image.alpha_composite(symbol, ((size - symbol.width) // 2, (size - symbol.height) // 2))
+        return image
+
+
+def placeholder_dofus_icon_image(size: int = 28) -> Image.Image | None:
+    """Create the muted Dofus egg used by empty profile slots."""
+    if not APP_ICON_PATH.is_file():
+        return None
+    with Image.open(APP_ICON_PATH) as source:
+        source_rgba = source.convert("RGBA")
+        symbol = ImageOps.contain(
+            source_rgba,
+            (max(1, size - 4), max(1, size - 4)),
+            Image.Resampling.LANCZOS,
+        )
+        alpha = symbol.getchannel("A").point(lambda value: round(value * 0.62))
+        symbol = ImageOps.grayscale(symbol.convert("RGB")).convert("RGBA")
+        symbol.putalpha(alpha)
+        image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        image.alpha_composite(
+            symbol,
+            ((size - symbol.width) // 2, (size - symbol.height) // 2),
+        )
         return image
 
 
@@ -711,6 +928,33 @@ def rounded_cell_background(
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 
+def drag_preview_image(
+    icon: Image.Image | None,
+    *,
+    width: int = 36,
+    height: int = 38,
+) -> Image.Image:
+    """Build the floating Dofus-style card shown during icon reordering."""
+    preview = rounded_cell_background(
+        CELL_HOVER,
+        GOLD,
+        width=width,
+        height=height,
+        outline_width=2,
+    ).convert("RGBA")
+    if icon is not None:
+        symbol = ImageOps.contain(
+            icon.convert("RGBA"),
+            (max(1, width - 8), max(1, height - 10)),
+            Image.Resampling.LANCZOS,
+        )
+        preview.alpha_composite(
+            symbol,
+            ((width - symbol.width) // 2, (height - symbol.height) // 2),
+        )
+    return preview
+
+
 def rounded_control_background(
     fill: str,
     outline: str,
@@ -737,7 +981,7 @@ def rounded_control_background(
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 
-class RoundedControlButton(tk.Label):
+class RoundedControlButton(tk.Button):
     def __init__(
         self,
         master: tk.Misc,
@@ -755,12 +999,17 @@ class RoundedControlButton(tk.Label):
             compound="center",
             bg=DOFUS_NAVY,
             fg=TEXT,
+            activebackground=DOFUS_NAVY,
+            activeforeground=TEXT,
             bd=0,
             highlightthickness=0,
             padx=0,
             pady=0,
             font=font,
             cursor="hand2",
+            relief="flat",
+            overrelief="flat",
+            takefocus=False,
         )
         self.command = command
         self.fill = fill
@@ -771,7 +1020,15 @@ class RoundedControlButton(tk.Label):
         self.bind("<Configure>", lambda _event: self.render(self.fill))
         self.bind("<Enter>", lambda _event: self.render(self.hover_fill))
         self.bind("<Leave>", lambda _event: self.render(self.fill))
-        self.bind("<ButtonRelease-1>", lambda _event: self.command())
+        # Trigger compact controls on press.  On a tiny borderless panel the
+        # release can be delivered to another widget after a one-pixel move or
+        # a focus change, which previously made the settings button appear
+        # unresponsive.
+        self.bind("<ButtonPress-1>", self._press)
+
+    def _press(self, _event: tk.Event | None = None) -> None:
+        if self.command is not None:
+            self.command()
 
     def render(self, fill: str) -> None:
         width = self.winfo_width()
@@ -856,6 +1113,58 @@ class RoundedSettingsButton(tk.Label):
         self.render(fill)
 
 
+class SettingsInputCapture:
+    """Own the temporary input-capture state used by the settings dialog."""
+
+    def __init__(self, panel: "DofusPanel", dialog: tk.Toplevel) -> None:
+        self.panel = panel
+        self.dialog = dialog
+        self.variable: tk.StringVar | None = None
+        self.button: RoundedSettingsButton | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.button is not None
+
+    def finish(self, value: str | None = None) -> None:
+        if value and self.variable is not None:
+            self.variable.set(value)
+        if self.button is not None and self.variable is not None:
+            self.button.set_state(
+                text=self.panel.display_input_name(self.variable.get()),
+                fill=CELL_FILL,
+                foreground=TEXT,
+                hover_fill=CELL_HOVER,
+            )
+        self.variable = None
+        self.button = None
+        self.panel.capture_input_handler = None
+        self.panel.capture_started_at = 0.0
+        self.panel.input_suppressed_until = time.monotonic() + 0.30
+
+    def begin(
+        self,
+        variable: tk.StringVar,
+        button: RoundedSettingsButton,
+    ) -> None:
+        if self.active:
+            self.finish()
+        self.variable = variable
+        self.button = button
+        button.set_state(
+            text=self.panel.t("press_input"),
+            fill=GOLD,
+            foreground=BG_DEEP,
+            hover_fill=GOLD,
+        )
+        self.panel.capture_started_at = time.monotonic()
+        self.panel.capture_input_handler = lambda name: self.finish(
+            None if name == "ESCAPE" else name
+        )
+        self.dialog.focus_force()
+        self.panel.set_status(self.panel.t("input_prompt"), GOLD)
+
+
 class DofusCheckBox(tk.Frame):
     """Flat shadowless checkbox with subtle rounding."""
 
@@ -902,6 +1211,126 @@ class DofusCheckBox(tk.Frame):
         image = image.resize((size, size), Image.Resampling.LANCZOS)
         self.icon_ref = ImageTk.PhotoImage(image)
         self.icon.configure(image=self.icon_ref)
+
+
+class DofusInfoTip(tk.Button):
+    """Compact information icon with a Dofus-styled tooltip."""
+
+    def __init__(self, master: tk.Misc, message: str) -> None:
+        super().__init__(
+            master,
+            text="ⓘ",
+            bg=BG,
+            fg=MUTED,
+            activebackground=BG,
+            activeforeground=TEXT,
+            font=("Segoe UI Symbol", 9, "bold"),
+            cursor="hand2",
+            bd=0,
+            relief="flat",
+            highlightthickness=0,
+            takefocus=False,
+            padx=2,
+        )
+        self.message = message
+        self.popup: tk.Toplevel | None = None
+        self.pinned = False
+        self.host = self.winfo_toplevel()
+        self.host_configure_binding = self.host.bind(
+            "<Configure>",
+            lambda _event: self.after_idle(self.reposition_tip),
+            add="+",
+        )
+        self.bind("<Enter>", lambda _event: self.show_tip())
+        self.bind("<Leave>", lambda _event: self.leave_tip())
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<Destroy>", lambda _event: self.dispose_tip())
+
+    def _press(self, _event: tk.Event | None = None) -> str:
+        """Pin the tip on mouse-down so borderless windows cannot lose the click."""
+        self.toggle_pin()
+        return "break"
+
+    def leave_tip(self) -> None:
+        if not self.pinned:
+            self.hide_tip()
+
+    def toggle_pin(self) -> None:
+        self.pinned = not self.pinned
+        if self.pinned:
+            self.show_tip()
+        else:
+            self.hide_tip()
+
+    def show_tip(self) -> None:
+        if self.popup is not None and self.popup.winfo_exists():
+            self.reposition_tip()
+            return
+        popup = tk.Toplevel(self.host)
+        self.popup = popup
+        popup.withdraw()
+        popup.overrideredirect(True)
+        popup.configure(
+            bg=PANEL_HOVER,
+            highlightbackground=CELL_BORDER,
+            highlightthickness=1,
+        )
+        popup.attributes("-topmost", True)
+        tk.Label(
+            popup,
+            text=self.message,
+            justify="left",
+            wraplength=250,
+            bg=PANEL_HOVER,
+            fg=TEXT,
+            font=("Segoe UI", 8),
+            padx=9,
+            pady=7,
+        ).pack()
+        popup.update_idletasks()
+        self.reposition_tip()
+        popup.deiconify()
+        popup.lift()
+
+    def reposition_tip(self) -> None:
+        popup = self.popup
+        if popup is None or not popup.winfo_exists() or not self.winfo_exists():
+            return
+        popup.update_idletasks()
+        width = popup.winfo_reqwidth()
+        height = popup.winfo_reqheight()
+        work_area = monitor_work_area(self.host.winfo_id()) or (
+            0,
+            0,
+            self.winfo_screenwidth(),
+            self.winfo_screenheight(),
+        )
+        anchor = (
+            self.winfo_rootx(),
+            self.winfo_rooty(),
+            self.winfo_rootx() + self.winfo_width(),
+            self.winfo_rooty() + self.winfo_height(),
+        )
+        x, y = position_dialog_near_rectangle(
+            anchor,
+            (width, height),
+            work_area,
+            gap=4,
+        )
+        popup.geometry(f"{width}x{height}{x:+d}{y:+d}")
+
+    def hide_tip(self) -> None:
+        popup = self.popup
+        self.popup = None
+        if popup is not None and popup.winfo_exists():
+            popup.destroy()
+
+    def dispose_tip(self) -> None:
+        self.pinned = False
+        self.hide_tip()
+        if self.host_configure_binding and self.host.winfo_exists():
+            self.host.unbind("<Configure>", self.host_configure_binding)
+        self.host_configure_binding = ""
 
 
 class DofusSlider(tk.Canvas):
@@ -1043,10 +1472,12 @@ class PlayerCell(tk.Frame):
         self.cell_height = app.px(38)
         self.icon_size = app.px(28)
         self.active = False
+        self.hovered = False
+        self.drop_target = False
         self.icon_ref: ImageTk.PhotoImage | None = None
         self.card_ref: ImageTk.PhotoImage | None = None
-        self.icon_signature: tuple[int | None, str, bool] | None = None
-        self.configure(cursor="hand2")
+        self.icon_signature: tuple[int | None, str, bool, bool] | None = None
+        self.configure(cursor="" if player.placeholder else "hand2")
         self.card = tk.Label(self, bg=DOFUS_NAVY, bd=0, highlightthickness=0)
         self.icon = tk.Label(
             self, bg=PANEL, fg=TEXT,
@@ -1067,30 +1498,50 @@ class PlayerCell(tk.Frame):
         )
         self.card.lower()
         self.icon.lift()
-        for widget in (self, self.card, self.icon, self.arrow):
-            widget.bind(
-                "<ButtonPress-1>",
-                lambda event: app.start_player_interaction(event, player),
-            )
-            widget.bind("<B1-Motion>", app.drag)
-            widget.bind(
-                "<ButtonRelease-1>",
-                lambda event: app.end_player_interaction(event, player),
-            )
-            widget.bind("<Enter>", lambda _event: self.set_hover(True))
-            widget.bind("<Leave>", lambda _event: self.set_hover(False))
+        if not player.placeholder:
+            for widget in (self, self.card, self.icon, self.arrow):
+                widget.bind(
+                    "<ButtonPress-1>",
+                    lambda event: app.start_player_interaction(event, player),
+                )
+                widget.bind(
+                    "<B1-Motion>",
+                    lambda event: app.drag_player_interaction(event, player),
+                )
+                widget.bind(
+                    "<ButtonRelease-1>",
+                    lambda event: app.end_player_interaction(event, player),
+                )
+                widget.bind("<Enter>", lambda _event: self.set_hover(True))
+                widget.bind("<Leave>", lambda _event: self.set_hover(False))
         self.refresh(False)
 
     def set_hover(self, hovered: bool) -> None:
-        if self.app.active_handle == self.player.handle:
+        if self.player.placeholder:
             return
-        color = CELL_HOVER if hovered else CELL_FILL
+        self.hovered = hovered
+        color = (
+            CELL_ACTIVE
+            if self.active
+            else CELL_HOVER if self.hovered else CELL_FILL
+        )
+        self.set_background(color)
+
+    def set_drop_target(self, targeted: bool) -> None:
+        if self.drop_target == targeted:
+            return
+        self.drop_target = targeted
+        color = (
+            CELL_ACTIVE
+            if self.active
+            else CELL_HOVER if self.hovered else CELL_FILL
+        )
         self.set_background(color)
 
     def set_background(self, color: str) -> None:
         self.icon.configure(bg=color)
-        border = LIME if self.active else CELL_BORDER
-        border_width = 2 if self.active else 1
+        border = GOLD if self.drop_target else LIME if self.active else CELL_BORDER
+        border_width = 2 if self.drop_target or self.active else 1
         self.card_ref = ImageTk.PhotoImage(
             rounded_cell_background(
                 color, border, width=self.cell_width, height=self.cell_height,
@@ -1116,18 +1567,27 @@ class PlayerCell(tk.Frame):
         else:
             self.arrow.place_forget()
         is_leader = self.app.is_leader(self.player)
-        signature = (self.player.handle, self.player.class_name, is_leader)
+        signature = (
+            self.player.handle,
+            self.player.class_name,
+            is_leader,
+            self.player.placeholder,
+        )
         if self.icon_signature != signature:
             self.icon_signature = signature
-            image = class_icon_image(self.player.class_name, self.icon_size)
-            if image is None and self.player.handle:
+            image = (
+                placeholder_dofus_icon_image(self.icon_size)
+                if self.player.placeholder
+                else class_icon_image(self.player.class_name, self.icon_size)
+            )
+            if image is None and self.player.handle and not self.player.placeholder:
                 image = get_window_icon(self.player.handle, self.icon_size)
-            if image is not None and not self.player.handle:
+            if image is not None and not self.player.handle and not self.player.placeholder:
                 alpha = image.getchannel("A")
                 image = ImageOps.grayscale(image.convert("RGB")).convert("RGBA")
                 image.putalpha(alpha)
             if image is not None:
-                if is_leader:
+                if is_leader and not self.player.placeholder:
                     image = add_leader_crown(image, self.icon_size)
                 self.icon_ref = ImageTk.PhotoImage(image)
                 self.icon.configure(image=self.icon_ref, text="")
@@ -1139,7 +1599,7 @@ class PlayerCell(tk.Frame):
 class DofusPanel:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.config_data = DEFAULT_CONFIG | load_json(CONFIG_PATH, DEFAULT_CONFIG)
+        self.config_data = load_panel_config(CONFIG_PATH)
         self.players: list[Player] = []
         self.cells: list[PlayerCell] = []
         self.active_handle: int | None = None
@@ -1168,14 +1628,30 @@ class DofusPanel:
         self.drag_start = (0, 0)
         self.dragging = False
         self.drag_allowed = False
+        self.player_drag_source: Player | None = None
+        self.player_drag_start = (0, 0)
+        self.player_drag_pointer = (0, 0)
+        self.player_dragging = False
+        self.player_drag_target_index: int | None = None
+        self.player_drag_ghost: tk.Toplevel | None = None
+        self.player_drag_ghost_image: ImageTk.PhotoImage | None = None
         self.status_popup: tk.Toplevel | None = None
         self.status_after_id: str | None = None
         self.settings_dialog: tk.Toplevel | None = None
+        self.settings_button: RoundedControlButton | None = None
+        self.settings_hitbox: tuple[int, int, int, int] | None = None
         self.update_dialog: tk.Toplevel | None = None
         self.tray_icon: pystray.Icon | None = None
         self.tray_thread: threading.Thread | None = None
         self.update_check_started = False
         self.closing = False
+
+        if getattr(sys, "frozen", False):
+            try:
+                PANEL_DIAGNOSTICS_PATH.write_text("", encoding="utf-8")
+            except OSError:
+                pass
+            append_panel_diagnostic("panel_started", pid=os.getpid())
 
         root.title("Dofus Multicompte Enhancer")
         if APP_ICON_PATH.is_file():
@@ -1231,7 +1707,13 @@ class DofusPanel:
         return max(1, round(value * self.ui_scale()))
 
     def is_leader(self, player: Player) -> bool:
-        return player.pseudo.casefold() == str(self.config_data["leader"]).casefold()
+        configured_leader = str(self.config_data.get("leader", "")).strip()
+        return bool(
+            configured_leader
+            and player.pseudo
+            and not player.placeholder
+            and player.pseudo.casefold() == configured_leader.casefold()
+        )
 
     def read_players(self) -> list[Player]:
         data = load_json(PLAYERS_PATH, {})
@@ -1247,8 +1729,13 @@ class DofusPanel:
             for item in data.get("players", [])
             if item.get("pseudo")
         ]
-        players.sort(key=lambda player: 0 if self.is_leader(player) else 1)
-        return players
+        if not players and not data.get("leader"):
+            self.config_data["leader"] = ""
+        return sort_players_for_panel(
+            players,
+            self.config_data.get("player_order", []),
+            str(self.config_data.get("leader", "")),
+        )
 
     def apply_window_title(self, player: Player, title: str) -> None:
         detected_class = ""
@@ -1287,6 +1774,9 @@ class DofusPanel:
                 unused.pop(matches[0], None)
 
     def build(self) -> None:
+        self.clear_player_drag_visual()
+        self.settings_button = None
+        self.settings_hitbox = None
         for child in self.content.winfo_children():
             child.destroy()
         self.cells.clear()
@@ -1312,7 +1802,7 @@ class DofusPanel:
         gear = RoundedControlButton(
             control,
             text="⚙",
-            command=self.open_settings,
+            command=lambda: self.request_open_settings("button"),
             fill=CELL_FILL,
             hover_fill=CELL_HOVER,
             outline=CONTROL_BORDER,
@@ -1328,6 +1818,7 @@ class DofusPanel:
             x=gear_x, y=gear_y,
             width=control_button_size, height=control_button_size,
         )
+        self.settings_button = gear
         if play_button_enabled:
             play = RoundedControlButton(
                 control,
@@ -1359,7 +1850,7 @@ class DofusPanel:
         )
         separator.pack(side="left" if horizontal else "top")
 
-        for player in self.players:
+        for player in players_with_placeholders(self.players):
             cell = PlayerCell(self.content, self, player)
             cell.pack(side="left" if horizontal else "top", padx=0, pady=0)
             self.cells.append(cell)
@@ -1368,7 +1859,32 @@ class DofusPanel:
             self.refresh_cells()
         self.root.update_idletasks()
         self.ensure_visible()
-        self.root.after_idle(lambda: apply_rounded_window(self.root, 6))
+        self.refresh_settings_hitbox()
+        self.root.after_idle(self.refresh_settings_hitbox)
+        self.root.after(250, self.refresh_settings_hitbox)
+        self.root.after_idle(lambda: apply_rounded_window(self.root))
+
+    def refresh_settings_hitbox(self) -> None:
+        """Cache the settings control bounds for the low-level mouse fallback."""
+        button = self.settings_button
+        if button is None:
+            self.settings_hitbox = None
+            return
+        try:
+            if not button.winfo_exists() or not button.winfo_ismapped():
+                self.settings_hitbox = None
+                return
+            padding = self.px(2)
+            left = button.winfo_rootx() - padding
+            top = button.winfo_rooty() - padding
+            self.settings_hitbox = (
+                left,
+                top,
+                left + button.winfo_width() + 2 * padding,
+                top + button.winfo_height() + 2 * padding,
+            )
+        except tk.TclError:
+            self.settings_hitbox = None
 
     def ensure_visible(self) -> None:
         """Keep the entire panel on-screen after resizing."""
@@ -1392,15 +1908,14 @@ class DofusPanel:
              RoundedSettingsButton, tk.Checkbutton),
         ):
             return
+        widget: tk.Misc | None = event.widget
+        while widget is not None:
+            if isinstance(widget, PlayerCell):
+                return
+            widget = getattr(widget, "master", None)
         self.drag_start = (event.x_root, event.y_root)
         if bool(self.config_data.get("position_locked", False)):
             return
-        if bool(self.config_data.get("drag_cells_locked", False)):
-            widget: tk.Misc | None = event.widget
-            while widget is not None:
-                if isinstance(widget, PlayerCell):
-                    return
-                widget = getattr(widget, "master", None)
         self.drag_origin = (event.x_root - self.root.winfo_x(), event.y_root - self.root.winfo_y())
         self.drag_allowed = True
 
@@ -1428,17 +1943,164 @@ class DofusPanel:
         self.config_data["x"] = self.root.winfo_x()
         self.config_data["y"] = self.root.winfo_y()
         save_json(CONFIG_PATH, self.config_data)
+        self.root.update_idletasks()
+        self.refresh_settings_hitbox()
         self.dragging = False
         self.drag_allowed = False
 
-    def start_player_interaction(self, event: tk.Event, _player: Player) -> None:
-        self.start_drag(event)
+    def start_player_interaction(self, event: tk.Event, player: Player) -> None:
+        self.clear_player_drag_visual()
+        self.drag_allowed = False
+        self.dragging = False
+        self.player_drag_source = (
+            None
+            if bool(self.config_data.get("drag_cells_locked", False))
+            else player
+        )
+        self.player_drag_start = (event.x_root, event.y_root)
+        self.player_drag_pointer = self.player_drag_start
+        self.player_dragging = False
+
+    def drag_player_interaction(self, event: tk.Event, player: Player) -> None:
+        if self.player_drag_source is not player:
+            return
+        self.player_drag_pointer = (event.x_root, event.y_root)
+        if self.player_dragging:
+            self.move_player_drag_visual(event.x_root, event.y_root)
+            return
+        distance = max(
+            abs(event.x_root - self.player_drag_start[0]),
+            abs(event.y_root - self.player_drag_start[1]),
+        )
+        if distance >= self.px(4):
+            self.player_dragging = True
+            self.begin_player_drag_visual(player, event.x_root, event.y_root)
+
+    def begin_player_drag_visual(
+        self, player: Player, x_root: int, y_root: int
+    ) -> None:
+        source_cell = next(
+            (cell for cell in self.cells if cell.player is player),
+            None,
+        )
+        icon: Image.Image | None = None
+        if source_cell is not None and source_cell.icon_ref is not None:
+            try:
+                icon = ImageTk.getimage(source_cell.icon_ref).convert("RGBA")
+            except (tk.TclError, ValueError):
+                icon = None
+        width = self.px(36)
+        height = self.px(38)
+        self.player_drag_ghost_image = ImageTk.PhotoImage(
+            drag_preview_image(icon, width=width, height=height)
+        )
+        ghost = tk.Toplevel(self.root)
+        self.player_drag_ghost = ghost
+        ghost.withdraw()
+        ghost.overrideredirect(True)
+        ghost.configure(bg=DOFUS_NAVY)
+        ghost.attributes("-topmost", True)
+        try:
+            ghost.attributes("-alpha", 0.90)
+        except tk.TclError:
+            pass
+        tk.Label(
+            ghost,
+            image=self.player_drag_ghost_image,
+            bg=DOFUS_NAVY,
+            bd=0,
+            highlightthickness=0,
+        ).pack()
+        self.move_player_drag_visual(x_root, y_root)
+        ghost.deiconify()
+        ghost.lift()
+
+    def move_player_drag_visual(self, x_root: int, y_root: int) -> None:
+        ghost = self.player_drag_ghost
+        if ghost is not None and ghost.winfo_exists():
+            width = self.px(36)
+            height = self.px(38)
+            offset = self.px(12)
+            x = min(x_root + offset, self.root.winfo_screenwidth() - width)
+            y = min(y_root + offset, self.root.winfo_screenheight() - height)
+            ghost.geometry(f"{width}x{height}{max(0, x):+d}{max(0, y):+d}")
+        target_index = self.player_drop_index(x_root, y_root)
+        source = self.player_drag_source
+        if source is not None:
+            preview_order = reorder_players(
+                self.players,
+                source,
+                target_index,
+                str(self.config_data.get("leader", "")),
+            )
+            target_index = preview_order.index(source)
+        self.player_drag_target_index = target_index
+        for index, cell in enumerate(
+            cell for cell in self.cells if not cell.player.placeholder
+        ):
+            cell.set_drop_target(index == target_index)
+
+    def clear_player_drag_visual(self) -> None:
+        ghost = self.player_drag_ghost
+        self.player_drag_ghost = None
+        self.player_drag_ghost_image = None
+        if ghost is not None:
+            try:
+                if ghost.winfo_exists():
+                    ghost.destroy()
+            except tk.TclError:
+                pass
+        for cell in self.cells:
+            try:
+                cell.set_drop_target(False)
+            except tk.TclError:
+                pass
+        self.player_drag_target_index = None
+
+    def player_drop_index(self, x_root: int, y_root: int) -> int:
+        real_cells = [cell for cell in self.cells if not cell.player.placeholder]
+        if not real_cells:
+            return 0
+        horizontal = self.config_data["orientation"] == "horizontal"
+        pointer = x_root if horizontal else y_root
+        centers = [
+            (
+                cell.winfo_rootx() + cell.winfo_width() // 2
+                if horizontal
+                else cell.winfo_rooty() + cell.winfo_height() // 2
+            )
+            for cell in real_cells
+        ]
+        return min(range(len(centers)), key=lambda index: abs(centers[index] - pointer))
+
+    def persist_player_order(self) -> None:
+        self.config_data["player_order"] = [
+            player.pseudo for player in self.players
+        ]
+        save_json(CONFIG_PATH, self.config_data)
 
     def end_player_interaction(self, event: tk.Event, player: Player) -> None:
-        was_dragging = self.dragging
-        self.end_drag(event)
-        if not was_dragging:
-            self.activate_player(player)
+        was_dragging = self.player_dragging and self.player_drag_source is player
+        pointer = self.player_drag_pointer
+        target_index = self.player_drag_target_index
+        self.player_drag_source = None
+        self.player_dragging = False
+        self.clear_player_drag_visual()
+        if was_dragging:
+            if target_index is None:
+                target_index = self.player_drop_index(*pointer)
+            reordered = reorder_players(
+                self.players,
+                player,
+                target_index,
+                str(self.config_data.get("leader", "")),
+            )
+            if reordered != self.players:
+                self.players = reordered
+                self.persist_player_order()
+                self.build()
+            return
+        self.activate_player(player)
 
     def activate_player(self, player: Player) -> None:
         if player.handle is None:
@@ -1891,22 +2553,39 @@ class DofusPanel:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
+        process = self.workflow
+
         def read_output() -> None:
-            assert self.workflow is not None
-            assert self.workflow.stdout is not None
-            for line in self.workflow.stdout:
+            assert process.stdout is not None
+            for line in process.stdout:
                 self.output_queue.put(line.strip())
-            self.output_queue.put("__DONE__")
+            # Waiting here avoids the small EOF/poll race that could display an
+            # error even though the workflow had actually exited successfully.
+            self.output_queue.put(workflow_done_marker(process.wait()))
 
         threading.Thread(target=read_output, daemon=True).start()
 
     def open_settings(self) -> None:
-        if self.settings_dialog is not None and self.settings_dialog.winfo_exists():
-            self.settings_dialog.deiconify()
-            self.settings_dialog.lift()
-            self.settings_dialog.focus_force()
-            return
         dialog_width = 318
+        existing_dialog = self.settings_dialog
+        if existing_dialog is not None:
+            try:
+                if existing_dialog.winfo_exists():
+                    existing_area = monitor_work_area(existing_dialog.winfo_id())
+                    if existing_area is None:
+                        existing_area = (
+                            0,
+                            0,
+                            self.root.winfo_screenwidth(),
+                            self.root.winfo_screenheight(),
+                        )
+                    reveal_dialog(
+                        existing_dialog, dialog_width, existing_area, self.root,
+                    )
+                    return
+            except tk.TclError:
+                pass
+            self.settings_dialog = None
         dialog_height = 528
         original_opacity = float(self.root.attributes("-alpha"))
         original_ui_scale = self.ui_scale()
@@ -1919,8 +2598,14 @@ class DofusPanel:
             bottom = self.root.winfo_screenheight()
         else:
             left, top, right, bottom = work_area
-        dialog_x = min(max(desired_x, left), max(left, right - dialog_width))
-        dialog_y = min(max(desired_y, top), max(top, bottom - dialog_height))
+        dialog_work_area = (left, top, right, bottom)
+        dialog_x, dialog_y = clamp_window_origin(
+            desired_x,
+            desired_y,
+            dialog_width,
+            dialog_height,
+            dialog_work_area,
+        )
 
         dialog = tk.Toplevel(self.root)
         self.settings_dialog = dialog
@@ -1933,8 +2618,7 @@ class DofusPanel:
         )
         dialog.bind(
             "<Destroy>",
-            lambda event: setattr(self, "settings_dialog", None)
-            if event.widget is dialog else None,
+            lambda event: self.settings_dialog_destroyed(event, dialog),
         )
         dialog.grid_columnconfigure(0, minsize=126)
         dialog.grid_columnconfigure(1, weight=1)
@@ -1945,130 +2629,72 @@ class DofusPanel:
         )
         header.grid(row=0, column=0, columnspan=2, sticky="ew")
         header.grid_propagate(False)
-        tk.Label(
+        title_label = tk.Label(
             header,
             text=f"⚙  {self.t('settings')} · v{APP_VERSION}",
             bg=PANEL_HOVER,
             fg=TEXT,
             font=("Segoe UI Semibold", 8), padx=10,
-        ).pack(side="left", fill="y")
+            cursor="fleur",
+        )
+        title_label.pack(side="left", fill="y")
         close_settings = tk.Button(
             header, text="−", bg=PANEL_HOVER, fg=TEXT,
             activebackground=CELL_HOVER, activeforeground=TEXT, relief="flat", bd=0,
             font=("Segoe UI Semibold", 12), cursor="hand2",
         )
         close_settings.pack(side="right", fill="y", ipadx=7)
-        dialog_drag_origin = [0, 0]
+        bind_dialog_drag(dialog, (header, title_label), dialog_work_area)
+        configure_settings_style(dialog)
 
-        def start_dialog_drag(event: tk.Event) -> None:
-            dialog_drag_origin[0] = event.x_root - dialog.winfo_x()
-            dialog_drag_origin[1] = event.y_root - dialog.winfo_y()
-
-        def drag_dialog(event: tk.Event) -> None:
-            dialog.geometry(
-                f"+{event.x_root - dialog_drag_origin[0]}+{event.y_root - dialog_drag_origin[1]}"
-            )
-
-        header.bind("<ButtonPress-1>", start_dialog_drag)
-        header.bind("<B1-Motion>", drag_dialog)
-
-        style = ttk.Style(dialog)
-        style.theme_use("clam")
-        style.configure(
-            "Dark.TCombobox", fieldbackground=CELL_FILL, background=CELL_FILL,
-            foreground=TEXT, arrowcolor=MUTED, bordercolor=CELL_BORDER,
-            lightcolor=CELL_FILL, darkcolor=CELL_FILL, padding=4,
-        )
-        style.map(
-            "Dark.TCombobox",
-            fieldbackground=[("readonly", CELL_FILL)],
-            foreground=[("readonly", TEXT)],
-            selectbackground=[("readonly", CELL_FILL)],
-            selectforeground=[("readonly", TEXT)],
-        )
-
-        orientation = tk.StringVar(value=str(self.config_data["orientation"]))
-        language = tk.StringVar(value=LANGUAGE_LABELS[self.language()])
-        previous = tk.StringVar(value=str(self.config_data["previous_key"]))
-        following = tk.StringVar(value=str(self.config_data["next_key"]))
-        broadcast = tk.StringVar(value=str(self.config_data["broadcast_key"]))
-        leader = tk.StringVar(value=str(self.config_data["leader"]))
-        opacity = tk.DoubleVar(value=float(self.config_data["opacity"]))
-        position_locked = tk.BooleanVar(
-            value=bool(self.config_data.get("position_locked", False))
-        )
-        drag_cells_locked = tk.BooleanVar(
-            value=bool(self.config_data.get("drag_cells_locked", False))
-        )
-        play_button_enabled = tk.BooleanVar(
-            value=bool(self.config_data.get("play_button_enabled", True))
-        )
-        ui_scale = tk.DoubleVar(value=self.ui_scale())
+        variables = SettingsVariables.from_panel(dialog, self)
         fields = [
-            (1, self.t("layout"), orientation, ["vertical", "horizontal"]),
-            (2, self.t("language"), language, list(LANGUAGE_LABELS.values())),
-            (6, self.t("group_leader"), leader, [player.pseudo for player in self.players] or ["Silvcra"]),
+            (1, self.t("layout"), variables.orientation, ["vertical", "horizontal"]),
+            (2, self.t("language"), variables.language, list(LANGUAGE_LABELS.values())),
+            (
+                6,
+                self.t("group_leader"),
+                variables.leader,
+                [player.pseudo for player in self.players],
+            ),
         ]
         for row, label, variable, values in fields:
-            tk.Label(
-                dialog, text=label.upper(), bg=BG, fg=MUTED,
-                font=("Segoe UI Semibold", 8),
-            ).grid(
+            label_container = tk.Frame(dialog, bg=BG)
+            label_container.grid(
                 row=row, column=0, padx=(12, 7), pady=7, sticky="w"
             )
+            tk.Label(
+                label_container, text=label.upper(), bg=BG, fg=MUTED,
+                font=("Segoe UI Semibold", 8),
+            ).pack(side="left")
+            if row == 6:
+                DofusInfoTip(
+                    label_container,
+                    self.t("group_leader_info"),
+                ).pack(side="left", padx=(3, 0))
             DofusComboBox(
                 dialog, variable=variable, values=list(values),
             ).grid(row=row, column=1, padx=(5, 12), pady=7, sticky="ew")
 
-        capture: dict[str, object | None] = {"variable": None, "button": None}
-
-        def finish_capture(value: str | None = None) -> None:
-            variable = capture["variable"]
-            button = capture["button"]
-            if value and isinstance(variable, tk.StringVar):
-                variable.set(value)
-            if isinstance(button, RoundedSettingsButton) and isinstance(variable, tk.StringVar):
-                button.set_state(
-                    text=self.display_input_name(variable.get()), fill=CELL_FILL, foreground=TEXT,
-                    hover_fill=CELL_HOVER,
-                )
-            capture["variable"] = None
-            capture["button"] = None
-            self.capture_input_handler = None
-            self.capture_started_at = 0.0
-            self.input_suppressed_until = time.monotonic() + 0.30
-
-        def begin_capture(variable: tk.StringVar, button: RoundedSettingsButton) -> None:
-            if capture["button"] is not None:
-                finish_capture()
-            capture["variable"] = variable
-            capture["button"] = button
-            button.set_state(
-                text=self.t("press_input"), fill=GOLD, foreground=BG_DEEP,
-                hover_fill=GOLD,
-            )
-            self.capture_started_at = time.monotonic()
-
-            def accept_input(name: str) -> None:
-                finish_capture(None if name == "ESCAPE" else name)
-
-            self.capture_input_handler = accept_input
-            dialog.focus_force()
-            self.set_status(self.t("input_prompt"), GOLD)
+        capture = SettingsInputCapture(self, dialog)
 
         def cancel_settings() -> None:
-            if capture["button"] is not None:
-                finish_capture()
+            if capture.active:
+                capture.finish()
+            scale_changed = abs(self.ui_scale() - original_ui_scale) > 0.001
             self.root.attributes("-alpha", original_opacity)
             self.config_data["ui_scale"] = original_ui_scale
-            self.build()
             if dialog.winfo_exists():
                 dialog.destroy()
+            if scale_changed:
+                self.build()
+            else:
+                self.root.after(250, self.refresh_settings_hitbox)
 
         close_settings.configure(command=cancel_settings)
 
         def capture_key(event: tk.Event) -> str | None:
-            if capture["variable"] is not None:
+            if capture.active:
                 return "break"
             if str(event.keysym).upper() == "ESCAPE":
                 cancel_settings()
@@ -2078,9 +2704,9 @@ class DofusPanel:
         dialog.bind("<KeyPress>", capture_key)
 
         for row, label, variable in (
-            (3, self.t("previous_key"), previous),
-            (4, self.t("next_key"), following),
-            (5, self.t("replication_mode"), broadcast),
+            (3, self.t("previous_key"), variables.previous),
+            (4, self.t("next_key"), variables.following),
+            (5, self.t("replication_mode"), variables.broadcast),
         ):
             tk.Label(
                 dialog, text=label.upper(), bg=BG, fg=MUTED,
@@ -2092,7 +2718,7 @@ class DofusPanel:
                 dialog, text=self.display_input_name(variable.get()), fill=CELL_FILL,
                 hover_fill=CELL_HOVER, outline=CELL_BORDER,
             )
-            button.command = lambda item=variable, target=button: begin_capture(item, target)
+            button.command = lambda item=variable, target=button: capture.begin(item, target)
             button.grid(row=row, column=1, padx=(5, 12), pady=7, sticky="ew")
 
         tk.Label(
@@ -2105,8 +2731,8 @@ class DofusPanel:
         lock_options.grid_columnconfigure(0, weight=1)
         lock_options.grid_columnconfigure(1, weight=1)
         for column, text, variable in (
-            (0, self.t("position"), position_locked),
-            (1, self.t("icons"), drag_cells_locked),
+            (0, self.t("position"), variables.position_locked),
+            (1, self.t("icons"), variables.drag_cells_locked),
         ):
             DofusCheckBox(
                 lock_options, text=text, variable=variable,
@@ -2117,7 +2743,7 @@ class DofusPanel:
             font=("Segoe UI Semibold", 8),
         ).grid(row=8, column=0, padx=(12, 7), pady=7, sticky="w")
         DofusCheckBox(
-            dialog, text=self.t("enabled"), variable=play_button_enabled,
+            dialog, text=self.t("enabled"), variable=variables.play_button_enabled,
         ).grid(row=8, column=1, padx=(5, 12), pady=7, sticky="w")
 
         tk.Label(
@@ -2131,7 +2757,7 @@ class DofusPanel:
 
         DofusSlider(
             dialog, from_=0.70, to=1.50, resolution=0.05,
-            variable=ui_scale, command=preview_scale,
+            variable=variables.ui_scale, command=preview_scale,
         ).grid(row=9, column=1, padx=(5, 12), pady=3, sticky="ew")
 
         tk.Label(
@@ -2147,27 +2773,15 @@ class DofusPanel:
 
         DofusSlider(
             dialog, from_=0.40, to=1.0, resolution=0.01,
-            variable=opacity, command=preview_opacity,
+            variable=variables.opacity, command=preview_opacity,
         ).grid(row=10, column=1, padx=(5, 12), pady=3, sticky="ew")
 
         def apply_settings() -> None:
-            if capture["button"] is not None:
-                finish_capture()
-            self.config_data.update(
-                orientation=orientation.get(), previous_key=previous.get(),
-                next_key=following.get(), broadcast_key=broadcast.get(),
-                leader=leader.get(), opacity=opacity.get(),
-                language=next(
-                    code for code, label in LANGUAGE_LABELS.items()
-                    if label == language.get()
-                ),
-                position_locked=bool(position_locked.get()),
-                drag_cells_locked=bool(drag_cells_locked.get()),
-                play_button_enabled=bool(play_button_enabled.get()),
-                ui_scale=float(ui_scale.get()),
-            )
+            if capture.active:
+                capture.finish()
+            self.config_data.update(variables.config_updates())
             save_json(CONFIG_PATH, self.config_data)
-            self.root.attributes("-alpha", float(opacity.get()))
+            self.root.attributes("-alpha", float(variables.opacity.get()))
             dialog.destroy()
             self.build()
             self.restart_tray_icon()
@@ -2178,11 +2792,12 @@ class DofusPanel:
             foreground=TEXT,
         )
         save_button.grid(
-            row=11, column=0, columnspan=2, padx=12, pady=(9, 5), sticky="ew"
+            row=11, column=0, columnspan=2, padx=12, pady=(9, 5),
+            ipady=3, sticky="ew",
         )
 
         action_row = tk.Frame(dialog, bg=BG)
-        action_row.grid(row=12, column=0, columnspan=2, padx=12, pady=(2, 11), sticky="ew")
+        action_row.grid(row=12, column=0, columnspan=2, padx=12, pady=(2, 4), sticky="ew")
         action_row.grid_columnconfigure(0, weight=1)
         action_row.grid_columnconfigure(1, weight=1)
 
@@ -2194,13 +2809,47 @@ class DofusPanel:
             action_row, text=self.t("minimize_app"), command=minimize_from_settings,
             fill=PANEL_HOVER, hover_fill=CELL_HOVER, outline=CELL_BORDER,
         )
-        minimize_button.grid(row=0, column=0, padx=(0, 3), sticky="ew")
+        minimize_button.grid(row=0, column=0, padx=(0, 3), ipady=3, sticky="ew")
         quit_button = RoundedSettingsButton(
             action_row, text=self.t("quit_app"), command=self.close,
             fill="#6d3d43", hover_fill=RED, outline="#8b4c52",
         )
-        quit_button.grid(row=0, column=1, padx=(3, 0), sticky="ew")
+        quit_button.grid(row=0, column=1, padx=(3, 0), ipady=3, sticky="ew")
+        dialog.after_idle(
+            lambda: reveal_dialog(
+                dialog, dialog_width, dialog_work_area, self.root,
+            )
+        )
+        dialog.after(
+            100,
+            lambda: reveal_dialog(
+                dialog, dialog_width, dialog_work_area, self.root,
+            ),
+        )
 
+    def request_open_settings(self, source: str) -> None:
+        append_panel_diagnostic(
+            "settings_requested",
+            source=source,
+            dialog=bool(self.settings_dialog),
+            hitbox=self.settings_hitbox,
+        )
+        try:
+            self.open_settings()
+            append_panel_diagnostic("settings_opened", source=source)
+        except Exception as error:
+            append_panel_diagnostic(
+                "settings_error",
+                source=source,
+                error=f"{type(error).__name__}: {error}",
+            )
+            self.set_status(f"PARAMÈTRES · {type(error).__name__}", RED)
+
+    def settings_dialog_destroyed(self, event: tk.Event, dialog: tk.Toplevel) -> None:
+        if event.widget is not dialog:
+            return
+        self.settings_dialog = None
+        append_panel_diagnostic("settings_closed")
 
     def start_input_listener(self) -> None:
         self.stop_input_listener()
@@ -2269,6 +2918,19 @@ class DofusPanel:
                             mouse_button_state |= MK_LBUTTON
                             input_name = "SOURIS GAUCHE"
                             emit_input(input_name)
+                            if point_in_rectangle(
+                                (int(data.pt.x), int(data.pt.y)),
+                                self.settings_hitbox,
+                            ):
+                                self.hotkey_events.put(
+                                    (
+                                        "open_settings",
+                                        (
+                                            (int(data.pt.x), int(data.pt.y)),
+                                            self.settings_hitbox,
+                                        ),
+                                    )
+                                )
                         elif message_id == WM_LBUTTONUP:
                             mouse_button_state &= ~MK_LBUTTON
                             input_name = "SOURIS GAUCHE"
@@ -2365,7 +3027,13 @@ class DofusPanel:
         try:
             while True:
                 event, payload = self.hotkey_events.get_nowait()
-                if event == "input":
+                if event == "open_settings":
+                    point, hitbox = payload if payload else (None, None)
+                    append_panel_diagnostic(
+                        "settings_hook_hit", point=point, hitbox=hitbox,
+                    )
+                    self.request_open_settings("mouse_hook")
+                elif event == "input":
                     name, occurred_at = payload
                     if self.capture_input_handler is not None:
                         if float(occurred_at) >= self.capture_started_at:
@@ -2421,11 +3089,11 @@ class DofusPanel:
         try:
             while True:
                 line = self.output_queue.get_nowait()
-                if line == "__DONE__":
-                    code = self.workflow.poll() if self.workflow else 1
+                exit_code = parse_workflow_done_marker(line)
+                if exit_code is not None:
                     self.set_status(
-                        self.t("done") if code == 0 else self.t("error"),
-                        LIME if code == 0 else RED,
+                        self.t("done") if exit_code == 0 else self.t("error"),
+                        LIME if exit_code == 0 else RED,
                     )
                     self.build()
                 elif line:
@@ -2493,6 +3161,7 @@ class DofusPanel:
             return
         if self.settings_dialog is not None and self.settings_dialog.winfo_exists():
             self.settings_dialog.withdraw()
+        self.settings_hitbox = None
         self.root.withdraw()
 
     def restore_app(self) -> None:
@@ -2502,6 +3171,7 @@ class DofusPanel:
         self.root.deiconify()
         self.root.lift()
         self.root.attributes("-topmost", True)
+        self.root.after_idle(self.refresh_settings_hitbox)
         self.root.after_idle(lambda: expose_root_in_taskbar(self.root))
 
     def close(self) -> None:

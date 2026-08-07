@@ -27,6 +27,7 @@ __all__ = [
     "detect_chat_bar",
     "execute_chat_command",
     "execute_chat_command_on_window",
+    "execute_chat_commands_on_window",
     "find_unique_window",
     "get_client_geometry",
     "list_matching_windows",
@@ -373,11 +374,15 @@ def get_client_geometry(hwnd: int) -> tuple[int, int, int, int]:
     return origin.x, origin.y, width, height
 
 
-def capture_window(hwnd: int) -> tuple[np.ndarray, int, int]:
+def capture_window(
+    hwnd: int,
+    *,
+    settle_delay: float = 0.20,
+) -> tuple[np.ndarray, int, int]:
     activate_window(hwnd)
-    # Two frames at 60 Hz are usually enough for the Windows compositor to show
-    # the activated window; 200 ms leaves headroom for Dofus/Qt/Electron.
-    time.sleep(0.20)
+    # Selection scans use a shorter delay for rapid window-to-window clicks;
+    # ordinary visual detection retains the safer 200 ms default.
+    time.sleep(max(0.0, settle_delay))
     left, top, width, height = get_client_geometry(hwnd)
     with mss.MSS() as screen:
         pixels = np.asarray(
@@ -429,8 +434,35 @@ def execute_chat_command_on_window(
     after_path: Path | None = None,
 ) -> CommandResult:
     """Wait for chat in a known window, then execute a command in it."""
-    if not command:
-        raise ValueError("The command cannot be empty.")
+    return execute_chat_commands_on_window(
+        hwnd,
+        [command],
+        submit=submit,
+        dry_run=dry_run,
+        delay=delay,
+        wait_timeout=wait_timeout,
+        poll_interval=poll_interval,
+        diagnostic_path=diagnostic_path,
+        after_path=after_path,
+    )[0]
+
+
+def execute_chat_commands_on_window(
+    hwnd: int,
+    commands: list[str],
+    *,
+    submit: bool = False,
+    dry_run: bool = False,
+    delay: float = 0.0,
+    wait_timeout: float = 0.0,
+    poll_interval: float = 0.5,
+    command_interval: float = 0.12,
+    diagnostic_path: Path | None = None,
+    after_path: Path | None = None,
+) -> list[CommandResult]:
+    """Detect chat once, then submit several commands as a tight batch."""
+    if not commands or any(not command for command in commands):
+        raise ValueError("Commands cannot be empty.")
 
     deadline = time.monotonic() + max(0.0, wait_timeout)
     while True:
@@ -452,16 +484,21 @@ def execute_chat_command_on_window(
             time.sleep(delay)
         activate_window(hwnd)
         origin_x, origin_y, _, _ = get_client_geometry(hwnd)
-        click_and_type(
-            origin_x + detection.click_x,
-            origin_y + detection.click_y,
-            command,
-            submit,
-        )
-        # Give the client time to consume Enter before another window receives
-        # focus. Otherwise the final command could remain unsent in the input.
+        for index, command in enumerate(commands):
+            click_and_type(
+                origin_x + detection.click_x,
+                origin_y + detection.click_y,
+                command,
+                submit,
+            )
+            # Keep the interval short while still allowing the client to consume
+            # Enter before the next command replaces the input contents.
+            if submit and index < len(commands) - 1:
+                time.sleep(max(0.04, command_interval))
         if submit:
-            time.sleep(0.18)
+            # Keep the leader focused long enough for the client to consume the
+            # final Enter before another Dofus window is activated.
+            time.sleep(0.20)
         if after_path is not None:
             time.sleep(0.25)
             after_image, _, _ = capture_window(hwnd)
@@ -469,13 +506,17 @@ def execute_chat_command_on_window(
             if not cv2.imwrite(str(after_path), after_image):
                 raise RuntimeError(f"Impossible d'enregistrer {after_path}")
 
-    return CommandResult(
-        window_title=get_window_title(hwnd),
-        detection=detection,
-        command=command,
-        submitted=submit and not dry_run,
-        dry_run=dry_run,
-    )
+    window_title = get_window_title(hwnd)
+    return [
+        CommandResult(
+            window_title=window_title,
+            detection=detection,
+            command=command,
+            submitted=submit and not dry_run,
+            dry_run=dry_run,
+        )
+        for command in commands
+    ]
 
 
 def execute_chat_command(

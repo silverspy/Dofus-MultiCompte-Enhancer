@@ -58,6 +58,26 @@ def test_installer_creates_shortcuts_and_an_uninstaller() -> None:
     assert "{uninstallexe}" in installer
     assert "SignTool=dmce" in installer
     assert "SignedUninstaller=yes" in installer
+    assert "dist-installed\\Dofus-MultiCompte-Enhancer\\*" in installer
+    assert "recursesubdirs createallsubdirs" in installer
+
+
+def test_installed_build_uses_onedir_for_fast_startup() -> None:
+    spec = (ROOT / "Dofus-MultiCompte-Enhancer-Onedir.spec").read_text(
+        encoding="utf-8"
+    )
+    workflow = (ROOT / ".github/workflows/windows-build.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "exclude_binaries=True" in spec
+    assert "coll = COLLECT(" in spec
+    assert "Dofus-MultiCompte-Enhancer-Onedir.spec" in workflow
+    assert "--distpath dist-installed" in workflow
+    assert (
+        "dist-installed/Dofus-MultiCompte-Enhancer/"
+        "Dofus-MultiCompte-Enhancer.exe"
+    ) in workflow
 
 
 def test_release_workflow_supports_optional_authenticode_signing() -> None:
@@ -89,3 +109,13 @@ def test_character_workflow_has_no_fixed_four_account_requirement() -> None:
     assert "wait_for_exactly_four_windows" not in source
     assert "len(windows) < 4" not in source
     assert '"account_count": len(players)' in source
+
+
+def test_pyinstaller_collects_only_the_used_ocr_backend() -> None:
+    spec = (ROOT / "Dofus-MultiCompte-Enhancer.spec").read_text(encoding="utf-8")
+
+    assert 'collect_data_files("rapidocr")' in spec
+    assert '"rapidocr.inference_engine.onnxruntime"' in spec
+    assert 'collect_all("rapidocr")' not in spec
+    assert '"rapidocr.inference_engine.pytorch"' in spec
+    assert "excludes=excluded_modules" in spec
