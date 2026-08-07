@@ -147,6 +147,20 @@ jobs:
             }
           }
 
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $packages = @(
+            "Dofus-MultiCompte-Enhancer.exe",
+            "Dofus-MultiCompte-Enhancer-Portable.zip",
+            "Dofus-MultiCompte-Enhancer-Setup.exe"
+          )
+          $checksums = foreach ($package in $packages) {
+            $hash = (Get-FileHash -LiteralPath "release/$package" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $package"
+          }
+          $checksums | Set-Content -LiteralPath "release/SHA256SUMS.txt" -Encoding ascii
+
       - name: Verify Authenticode signatures
         if: env.SIGNING_ENABLED == 'true'
         shell: pwsh
@@ -179,6 +193,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
     steps:
       - name: Download validated distribution packages
@@ -186,6 +203,11 @@ jobs:
         with:
           name: Dofus-MultiCompte-Enhancer-Windows
           path: release
+
+      - name: Attest release packages
+        uses: actions/attest@v4
+        with:
+          subject-path: release/*
 
       - name: Create the GitHub Release
         shell: pwsh
@@ -196,6 +218,7 @@ jobs:
             "release/Dofus-MultiCompte-Enhancer.exe" `
             "release/Dofus-MultiCompte-Enhancer-Portable.zip" `
             "release/Dofus-MultiCompte-Enhancer-Setup.exe" `
+            "release/SHA256SUMS.txt" `
             --repo "${{ github.repository }}" `
             --title "Dofus MultiCompte Enhancer ${{ github.ref_name }}" `
             --generate-notes `
