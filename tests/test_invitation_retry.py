@@ -16,6 +16,8 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
     commands: list[str] = []
     accept_attempts: dict[str, int] = {}
     activations: list[int] = []
+    selection_actions: list[tuple[str, int]] = []
+    sleeps: list[float] = []
 
     monkeypatch.setattr(
         dofus_character_login.cv2,
@@ -29,11 +31,18 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
         lambda **_kwargs: [(handle, player.window_title_before) for handle, player in players.items()],
     )
     monkeypatch.setattr(dofus_character_login, "try_click_start_play", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        dofus_character_login,
-        "try_process_character_window",
-        lambda handle, _title, **_kwargs: players[handle],
-    )
+    def read_character(handle, _title, **_kwargs):
+        selection_actions.append(("read", handle))
+        return (
+            players[handle],
+            dofus_character_login.CharacterButton(10, 10, 0.95),
+        )
+
+    def click_character(handle, _button):
+        selection_actions.append(("click", handle))
+
+    monkeypatch.setattr(dofus_character_login, "try_read_character_window", read_character)
+    monkeypatch.setattr(dofus_character_login, "click_character_play", click_character)
     monkeypatch.setattr(
         dofus_character_login,
         "execute_chat_command_on_window",
@@ -49,7 +58,7 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(dofus_character_login, "accept_group_invitation", accept)
     monkeypatch.setattr(dofus_character_login, "activate_window", activations.append)
-    monkeypatch.setattr(dofus_character_login.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(dofus_character_login.time, "sleep", sleeps.append)
 
     output = tmp_path / "players.json"
     dofus_character_login.login_characters(
@@ -60,6 +69,15 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
     )
 
     assert commands == ["/invite Ready", "/invite Late", "/invite Late"]
+    assert selection_actions == [
+        ("read", 101),
+        ("read", 202),
+        ("read", 303),
+        ("click", 101),
+        ("click", 202),
+        ("click", 303),
+    ]
+    assert sleeps[0] == 2.5
     assert accept_attempts == {"Ready": 1, "Late": 2}
     assert activations[-1] == 101
     payload = json.loads(output.read_text(encoding="utf-8"))

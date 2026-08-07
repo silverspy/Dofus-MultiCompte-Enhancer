@@ -448,16 +448,15 @@ def save_character_diagnostic(
         raise RuntimeError(f"Impossible d'enregistrer {path}")
 
 
-def try_process_character_window(
+def try_read_character_window(
     hwnd: int,
     initial_title: str,
     *,
     ocr: RapidOCR,
     play_template: np.ndarray,
-    dry_run: bool,
     diagnostics_dir: Path | None,
-) -> PlayerWindow | None:
-    """Process a window once without blocking while it is still loading."""
+) -> tuple[PlayerWindow, CharacterButton] | None:
+    """Read a ready selection screen without clicking its PLAY button."""
     image, _, _ = capture_window(hwnd)
     pseudo_data = read_selected_pseudo(image, ocr)
     button = detect_character_play_button(image, play_template)
@@ -475,16 +474,52 @@ def try_process_character_window(
             diagnostics_dir / f"character-{safe_name}.png",
         )
 
-    if not dry_run:
-        activate_window(hwnd)
-        origin_x, origin_y, _, _ = get_client_geometry(hwnd)
-        click_screen(origin_x + button.click_x, origin_y + button.click_y)
+    return (
+        PlayerWindow(
+            pseudo=pseudo,
+            ocr_confidence=ocr_confidence,
+            window_handle=hwnd,
+            window_title_before=initial_title,
+            clicked_play=False,
+        ),
+        button,
+    )
 
+
+def click_character_play(hwnd: int, button: CharacterButton) -> None:
+    """Activate a character window and click its already-detected PLAY button."""
+    activate_window(hwnd)
+    origin_x, origin_y, _, _ = get_client_geometry(hwnd)
+    click_screen(origin_x + button.click_x, origin_y + button.click_y)
+
+
+def try_process_character_window(
+    hwnd: int,
+    initial_title: str,
+    *,
+    ocr: RapidOCR,
+    play_template: np.ndarray,
+    dry_run: bool,
+    diagnostics_dir: Path | None,
+) -> PlayerWindow | None:
+    """Process a window once without blocking while it is still loading."""
+    ready = try_read_character_window(
+        hwnd,
+        initial_title,
+        ocr=ocr,
+        play_template=play_template,
+        diagnostics_dir=diagnostics_dir,
+    )
+    if ready is None:
+        return None
+    player, button = ready
+    if not dry_run:
+        click_character_play(hwnd, button)
     return PlayerWindow(
-        pseudo=pseudo,
-        ocr_confidence=ocr_confidence,
-        window_handle=hwnd,
-        window_title_before=initial_title,
+        pseudo=player.pseudo,
+        ocr_confidence=player.ocr_confidence,
+        window_handle=player.window_handle,
+        window_title_before=player.window_title_before,
         clicked_play=not dry_run,
     )
 
@@ -556,6 +591,7 @@ def login_characters(
     invite_others: bool = True,
     chat_timeout: float = 180.0,
     invitation_timeout: float = 60.0,
+    post_login_delay: float = 2.5,
 ) -> list[PlayerWindow]:
     workflow_started = time.monotonic()
     timings: dict[str, object] = {}
@@ -594,6 +630,7 @@ def login_characters(
     character_phase_started = time.monotonic()
     pending = [(index, hwnd, title) for index, (hwnd, title) in enumerate(windows, start=1)]
     processing_seconds = {hwnd: 0.0 for _, hwnd, _ in pending}
+    ready_to_play: list[tuple[int, PlayerWindow, CharacterButton]] = []
     startup_clicked: set[int] = set()
     deadline = character_phase_started + selection_timeout
     print(f"Scanning {len(windows)} character-selection screen(s)...", flush=True)
@@ -618,20 +655,23 @@ def login_characters(
                         flush=True,
                     )
                     continue
-            player = try_process_character_window(
+            ready = try_read_character_window(
                 hwnd,
                 title,
                 ocr=ocr,
                 play_template=template,
-                dry_run=dry_run,
                 diagnostics_dir=diagnostics_dir,
             )
             processing_seconds[hwnd] += time.monotonic() - attempt_started
-            if player is None:
+            if ready is None:
                 continue
-            if any(existing.pseudo.casefold() == player.pseudo.casefold() for existing in players):
+            player, button = ready
+            if any(
+                existing.pseudo.casefold() == player.pseudo.casefold()
+                for _, existing, _ in ready_to_play
+            ):
                 raise RuntimeError(f"Duplicate OCR character name: {player.pseudo}")
-            players.append(player)
+            ready_to_play.append((index, player, button))
             pending.remove((index, hwnd, title))
             progress = True
             ready_after = time.monotonic() - character_phase_started
@@ -644,8 +684,7 @@ def login_characters(
             )
             print(
                 f"  {player.pseudo} ({player.ocr_confidence:.0%}) : "
-                f"{'PLAY clicked' if player.clicked_play else 'validated without clicking'} "
-                f"at +{ready_after:.3f}s",
+                f"selection ready at +{ready_after:.3f}s",
                 flush=True,
             )
         if pending and not progress:
@@ -654,6 +693,30 @@ def login_characters(
     if pending:
         handles = ", ".join(str(hwnd) for _, hwnd, _ in pending)
         raise RuntimeError(f"Selection screens incomplete after {selection_timeout:.0f}s: {handles}")
+
+    # All names and button positions are known now. Click every selection PLAY
+    # button as one tight batch instead of spacing clicks out with OCR work.
+    click_batch_started = time.monotonic()
+    for _index, player, button in ready_to_play:
+        if not dry_run:
+            click_character_play(player.window_handle, button)
+        players.append(
+            PlayerWindow(
+                pseudo=player.pseudo,
+                ocr_confidence=player.ocr_confidence,
+                window_handle=player.window_handle,
+                window_title_before=player.window_title_before,
+                clicked_play=not dry_run,
+            )
+        )
+    timings["character_play_clicks_seconds"] = round(
+        time.monotonic() - click_batch_started, 3
+    )
+    print(
+        f"Clicked {len(ready_to_play)} character PLAY button(s) in "
+        f"{timings['character_play_clicks_seconds']:.3f}s.",
+        flush=True,
+    )
     timings["characters_total_seconds"] = round(
         time.monotonic() - character_phase_started, 3
     )
@@ -683,6 +746,17 @@ def login_characters(
         invite_phase_started = time.monotonic()
         invitation_send_seconds = 0.0
         invitation_accept_seconds = 0.0
+        settle_delay = max(0.0, float(post_login_delay))
+        if settle_delay:
+            print(
+                f"Letting all clients connect for {settle_delay:.1f}s before invitations...",
+                flush=True,
+            )
+            settle_started = time.monotonic()
+            time.sleep(settle_delay)
+            timings["post_login_settle_seconds"] = round(
+                time.monotonic() - settle_started, 3
+            )
         print(f"Waiting for {leader_player.pseudo} to enter the game...", flush=True)
         invitations_by_handle: dict[int, dict[str, object]] = {}
         for target in targets:
@@ -896,6 +970,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--skip-invites", action="store_true", help="do not send invitations")
     parser.add_argument("--chat-timeout", type=float, default=180.0)
     parser.add_argument("--invitation-timeout", type=float, default=60.0)
+    parser.add_argument("--post-login-delay", type=float, default=2.5)
     parser.add_argument("--image", type=Path, help="test a screenshot without controlling Windows")
     parser.add_argument("--start-image", type=Path, help="test central PLAY on a screenshot")
     parser.add_argument("--invitation-image", type=Path, help="test ACCEPT on a screenshot")
@@ -934,6 +1009,7 @@ def main() -> int:
             invite_others=not args.skip_invites,
             chat_timeout=args.chat_timeout,
             invitation_timeout=args.invitation_timeout,
+            post_login_delay=args.post_login_delay,
         )
     except (RuntimeError, TimeoutError) as error:
         print(str(error))
