@@ -44,6 +44,31 @@ def test_installer_creates_shortcuts_and_an_uninstaller() -> None:
     assert "{group}\\{#MyAppName}" in installer
     assert "{autodesktop}\\{#MyAppName}" in installer
     assert "{uninstallexe}" in installer
+    assert "SignTool=dmce" in installer
+    assert "SignedUninstaller=yes" in installer
+
+
+def test_release_workflow_supports_optional_authenticode_signing() -> None:
+    workflow = (ROOT / ".github/workflows/windows-build.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "WINDOWS_CERTIFICATE_BASE64" in workflow
+    assert "WINDOWS_CERTIFICATE_PASSWORD" in workflow
+    assert "/fd SHA256" in workflow
+    assert "/td SHA256" in workflow
+    assert "signtool.exe" in workflow.casefold()
+    assert "verify /pa /all" in workflow
+
+
+def test_development_certificate_script_does_not_publish_private_keys() -> None:
+    script = ROOT / "scripts/New-DevelopmentCodeSigningCertificate.ps1"
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert script.is_file()
+    assert "New-SelfSignedCertificate" in script.read_text(encoding="utf-8")
+    assert "certificates/" in gitignore
+    assert "*.pfx" in gitignore
 
 
 def test_character_workflow_has_no_fixed_four_account_requirement() -> None:

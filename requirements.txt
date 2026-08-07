@@ -1,5 +1,6 @@
 opencv-python==5.0.0.93
 mss==10.2.0
 pillow==12.3.0
+pystray==0.19.5
 rapidocr==3.9.2
 onnxruntime==1.28.0

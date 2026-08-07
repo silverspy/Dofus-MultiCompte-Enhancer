@@ -18,3 +18,8 @@ app/character-diagnostics/
 diagnostic-*.png
 panel-*.png
 live-*.png
+
+# Local development signing keys must never be committed
+certificates/
+*.pfx
+*.p12

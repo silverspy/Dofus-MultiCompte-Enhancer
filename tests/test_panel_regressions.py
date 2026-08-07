@@ -26,6 +26,8 @@ def test_ui_translation_supports_french_and_english() -> None:
     assert dofus_panel.translate("unknown", "save") == "ENREGISTRER"
     assert dofus_panel.translate("fr", "update_now") == "METTRE À JOUR"
     assert dofus_panel.translate("en", "update_now") == "UPDATE NOW"
+    assert dofus_panel.translate("fr", "minimize_app") == "RÉDUIRE L’APPLICATION"
+    assert dofus_panel.translate("en", "quit_app") == "QUIT APPLICATION"
 
 
 def test_english_mode_translates_input_names_without_changing_bindings() -> None:

@@ -15,6 +15,8 @@ jobs:
   test-and-build:
     runs-on: windows-latest
     timeout-minutes: 35
+    env:
+      SIGNING_ENABLED: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 != '' && secrets.WINDOWS_CERTIFICATE_PASSWORD != '' }}
 
     steps:
       - name: Check out the repository
@@ -51,6 +53,51 @@ jobs:
       - name: Build the executable
         run: python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 
+      - name: Configure Authenticode signing
+        if: env.SIGNING_ENABLED == 'true'
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP "windows-code-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:CERTIFICATE_BASE64)
+          )
+          $securePassword = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate `
+            -FilePath $certificatePath `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password $securePassword
+          if (-not $certificate.Thumbprint) {
+            throw "The code-signing certificate could not be imported."
+          }
+          "SIGN_CERTIFICATE_THUMBPRINT=$($certificate.Thumbprint)" | `
+            Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
+
+      - name: Sign the application executable
+        if: env.SIGNING_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem `
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | `
+            Sort-Object FullName -Descending | `
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signTool) {
+            throw "SignTool was not found on the Windows runner."
+          }
+          & $signTool sign `
+            /sha1 $env:SIGN_CERTIFICATE_THUMBPRINT `
+            /fd SHA256 `
+            /tr http://timestamp.digicert.com `
+            /td SHA256 `
+            /d "Dofus MultiCompte Enhancer" `
+            "dist/Dofus-MultiCompte-Enhancer.exe"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Authenticode signing failed for the application executable."
+          }
+
       - name: Build portable and installer packages
         shell: pwsh
         run: |
@@ -61,7 +108,27 @@ jobs:
           if (-not (Test-Path -LiteralPath $compiler)) {
             throw "Inno Setup compiler not found: $compiler"
           }
-          & $compiler "/DMyAppVersion=$env:APP_VERSION" "installer/Dofus-MultiCompte-Enhancer.iss"
+          $compilerArguments = @(
+            "/DMyAppVersion=$env:APP_VERSION"
+          )
+          if ($env:SIGNING_ENABLED -eq "true") {
+            $signTool = Get-ChildItem `
+              "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | `
+              Sort-Object FullName -Descending | `
+              Select-Object -First 1 -ExpandProperty FullName
+            $signCommand = (
+              "`$q{0}`$q sign /sha1 {1} /fd SHA256 " +
+              "/tr http://timestamp.digicert.com /td SHA256 " +
+              "/d `$qDofus MultiCompte Enhancer`$q `$f"
+            ) -f $signTool, $env:SIGN_CERTIFICATE_THUMBPRINT
+            $compilerArguments += "/DEnableCodeSigning=1"
+            $compilerArguments += "/Sdmce=$signCommand"
+          }
+          $compilerArguments += "installer/Dofus-MultiCompte-Enhancer.iss"
+          & $compiler @compilerArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed."
+          }
 
       - name: Validate distribution packages
         shell: pwsh
@@ -77,6 +144,24 @@ jobs:
             }
             if ((Get-Item -LiteralPath $package).Length -lt 1MB) {
               throw "Distribution package is unexpectedly small: $package"
+            }
+          }
+
+      - name: Verify Authenticode signatures
+        if: env.SIGNING_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem `
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | `
+            Sort-Object FullName -Descending | `
+            Select-Object -First 1 -ExpandProperty FullName
+          foreach ($package in @(
+            "release/Dofus-MultiCompte-Enhancer.exe",
+            "release/Dofus-MultiCompte-Enhancer-Setup.exe"
+          )) {
+            & $signTool verify /pa /all /v $package
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode verification failed: $package"
             }
           }
 

@@ -24,6 +24,7 @@ from tkinter import ttk
 from ctypes import wintypes
 
 from PIL import Image, ImageDraw, ImageOps, ImageTk
+import pystray
 
 from build_version import APP_VERSION
 from chat_vision import activate_window, list_windows_by_executable
@@ -129,6 +130,10 @@ TRANSLATIONS = {
         "update_later": "PLUS TARD",
         "update_downloading": "TÉLÉCHARGEMENT DE LA MISE À JOUR…",
         "update_failed": "ÉCHEC DE LA MISE À JOUR: {error}",
+        "close_settings": "FERMER LES PARAMÈTRES",
+        "minimize_app": "RÉDUIRE L’APPLICATION",
+        "show_app": "AFFICHER L’APPLICATION",
+        "quit_app": "QUITTER L’APPLICATION",
     },
     "en": {
         "settings": "SETTINGS",
@@ -165,6 +170,10 @@ TRANSLATIONS = {
         "update_later": "LATER",
         "update_downloading": "DOWNLOADING UPDATE…",
         "update_failed": "UPDATE FAILED: {error}",
+        "close_settings": "CLOSE SETTINGS",
+        "minimize_app": "MINIMIZE APPLICATION",
+        "show_app": "SHOW APPLICATION",
+        "quit_app": "QUIT APPLICATION",
     },
 }
 
@@ -1163,6 +1172,8 @@ class DofusPanel:
         self.status_after_id: str | None = None
         self.settings_dialog: tk.Toplevel | None = None
         self.update_dialog: tk.Toplevel | None = None
+        self.tray_icon: pystray.Icon | None = None
+        self.tray_thread: threading.Thread | None = None
         self.update_check_started = False
         self.closing = False
 
@@ -1193,6 +1204,7 @@ class DofusPanel:
         self.build()
         self.start_broadcast_worker()
         self.start_input_listener()
+        self.start_tray_icon()
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(120, lambda: expose_root_in_taskbar(root))
         root.after(1800, self.check_for_updates_async)
@@ -1895,7 +1907,9 @@ class DofusPanel:
             self.settings_dialog.focus_force()
             return
         dialog_width = 318
-        dialog_height = 472
+        dialog_height = 528
+        original_opacity = float(self.root.attributes("-alpha"))
+        original_ui_scale = self.ui_scale()
         desired_x = self.root.winfo_x() + 35
         desired_y = self.root.winfo_y() + 35
         work_area = monitor_work_area(self.root.winfo_id())
@@ -1938,13 +1952,12 @@ class DofusPanel:
             fg=TEXT,
             font=("Segoe UI Semibold", 8), padx=10,
         ).pack(side="left", fill="y")
-        close_app = tk.Button(
-            header, text="×", command=self.close, bg=PANEL_HOVER, fg=MUTED,
-            activebackground=RED, activeforeground=TEXT, relief="flat", bd=0,
-            font=("Segoe UI", 11), cursor="hand2",
+        close_settings = tk.Button(
+            header, text="−", bg=PANEL_HOVER, fg=TEXT,
+            activebackground=CELL_HOVER, activeforeground=TEXT, relief="flat", bd=0,
+            font=("Segoe UI Semibold", 12), cursor="hand2",
         )
-        close_app.pack(side="right", fill="y", ipadx=6)
-        close_app.bind("<Button-1>", lambda _event: self.root.after_idle(self.close))
+        close_settings.pack(side="right", fill="y", ipadx=7)
         dialog_drag_origin = [0, 0]
 
         def start_dialog_drag(event: tk.Event) -> None:
@@ -1991,9 +2004,6 @@ class DofusPanel:
             value=bool(self.config_data.get("play_button_enabled", True))
         )
         ui_scale = tk.DoubleVar(value=self.ui_scale())
-        original_opacity = float(self.root.attributes("-alpha"))
-        original_ui_scale = self.ui_scale()
-
         fields = [
             (1, self.t("layout"), orientation, ["vertical", "horizontal"]),
             (2, self.t("language"), language, list(LANGUAGE_LABELS.values())),
@@ -2046,14 +2056,22 @@ class DofusPanel:
             dialog.focus_force()
             self.set_status(self.t("input_prompt"), GOLD)
 
+        def cancel_settings() -> None:
+            if capture["button"] is not None:
+                finish_capture()
+            self.root.attributes("-alpha", original_opacity)
+            self.config_data["ui_scale"] = original_ui_scale
+            self.build()
+            if dialog.winfo_exists():
+                dialog.destroy()
+
+        close_settings.configure(command=cancel_settings)
+
         def capture_key(event: tk.Event) -> str | None:
             if capture["variable"] is not None:
                 return "break"
             if str(event.keysym).upper() == "ESCAPE":
-                self.root.attributes("-alpha", original_opacity)
-                self.config_data["ui_scale"] = original_ui_scale
-                self.build()
-                dialog.destroy()
+                cancel_settings()
                 return "break"
             return None
 
@@ -2152,6 +2170,7 @@ class DofusPanel:
             self.root.attributes("-alpha", float(opacity.get()))
             dialog.destroy()
             self.build()
+            self.restart_tray_icon()
 
         save_button = RoundedSettingsButton(
             dialog, text=self.t("save"), command=apply_settings,
@@ -2159,8 +2178,28 @@ class DofusPanel:
             foreground=TEXT,
         )
         save_button.grid(
-            row=11, column=0, columnspan=2, padx=12, pady=(9, 11), sticky="ew"
+            row=11, column=0, columnspan=2, padx=12, pady=(9, 5), sticky="ew"
         )
+
+        action_row = tk.Frame(dialog, bg=BG)
+        action_row.grid(row=12, column=0, columnspan=2, padx=12, pady=(2, 11), sticky="ew")
+        action_row.grid_columnconfigure(0, weight=1)
+        action_row.grid_columnconfigure(1, weight=1)
+
+        def minimize_from_settings() -> None:
+            cancel_settings()
+            self.minimize_app()
+
+        minimize_button = RoundedSettingsButton(
+            action_row, text=self.t("minimize_app"), command=minimize_from_settings,
+            fill=PANEL_HOVER, hover_fill=CELL_HOVER, outline=CELL_BORDER,
+        )
+        minimize_button.grid(row=0, column=0, padx=(0, 3), sticky="ew")
+        quit_button = RoundedSettingsButton(
+            action_row, text=self.t("quit_app"), command=self.close,
+            fill="#6d3d43", hover_fill=RED, outline="#8b4c52",
+        )
+        quit_button.grid(row=0, column=1, padx=(3, 0), sticky="ew")
 
 
     def start_input_listener(self) -> None:
@@ -2396,11 +2435,81 @@ class DofusPanel:
 
         self.root.after(80, self.poll)
 
+    def start_tray_icon(self) -> None:
+        """Expose show, minimize, and quit actions from the Windows tray."""
+        if self.tray_icon is not None or not APP_ICON_PATH.is_file():
+            return
+        try:
+            image = Image.open(APP_ICON_PATH).convert("RGBA")
+            menu = pystray.Menu(
+                pystray.MenuItem(
+                    self.t("show_app"),
+                    lambda _icon, _item: self.root.after(0, self.restore_app),
+                    default=True,
+                ),
+                pystray.MenuItem(
+                    self.t("minimize_app"),
+                    lambda _icon, _item: self.root.after(0, self.minimize_app),
+                ),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    self.t("quit_app"),
+                    lambda _icon, _item: self.root.after(0, self.close),
+                ),
+            )
+            self.tray_icon = pystray.Icon(
+                "dofus-multicompte-enhancer",
+                image,
+                "Dofus MultiCompte Enhancer",
+                menu,
+            )
+            self.tray_thread = threading.Thread(
+                target=self.tray_icon.run,
+                name="dofus-panel-tray",
+                daemon=True,
+            )
+            self.tray_thread.start()
+        except Exception:
+            # The panel remains usable if Explorer temporarily refuses tray icons.
+            self.tray_icon = None
+            self.tray_thread = None
+
+    def stop_tray_icon(self) -> None:
+        icon = self.tray_icon
+        self.tray_icon = None
+        if icon is not None:
+            try:
+                icon.stop()
+            except Exception:
+                pass
+
+    def restart_tray_icon(self) -> None:
+        self.stop_tray_icon()
+        self.start_tray_icon()
+
+    def minimize_app(self) -> None:
+        """Hide the borderless panel while keeping its tray controls available."""
+        if self.closing:
+            return
+        if self.settings_dialog is not None and self.settings_dialog.winfo_exists():
+            self.settings_dialog.withdraw()
+        self.root.withdraw()
+
+    def restore_app(self) -> None:
+        """Restore the panel and its taskbar presence from the tray menu."""
+        if self.closing:
+            return
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after_idle(lambda: expose_root_in_taskbar(self.root))
+
     def close(self) -> None:
         if self.closing:
             return
         self.closing = True
         try:
+            self.stop_tray_icon()
             self.stop_input_listener()
             self.broadcast_stop.set()
             self.broadcast_actions.put(None)
