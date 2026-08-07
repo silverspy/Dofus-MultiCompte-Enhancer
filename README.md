@@ -53,18 +53,11 @@ Choisissez votre format depuis la [dernière Release](https://github.com/silvers
 | Version | Pour quel usage ? |
 |---|---|
 | **`Dofus-MultiCompte-Enhancer-Setup.exe`** | Installation Windows classique dans votre profil, raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. |
-| **`Dofus-MultiCompte-Enhancer-Portable.zip`** | Aucun installateur : décompressez l'archive où vous le souhaitez et lancez directement l'EXE. La mise à jour portable remplace et relance automatiquement l'application. |
+| **`Dofus-MultiCompte-Enhancer-Portable.exe`** | Aucun installateur : placez cet exécutable où vous le souhaitez et lancez-le directement. La mise à jour portable remplace et relance automatiquement l'application. |
 
 Aucune installation de Python n'est nécessaire. Les versions publiées sont signées avec Authenticode lorsque le certificat de publication est configuré dans GitHub Actions. Une nouvelle identité de signature peut malgré tout afficher temporairement SmartScreen pendant que sa réputation se construit.
 
-La version `0.3.0` est distribuée sans signature Authenticode publique et Windows peut donc afficher un avertissement SmartScreen. Chaque Release fournit néanmoins `SHA256SUMS.txt` et une attestation GitHub générée par la pipeline officielle. Vous pouvez vérifier l'origine d'un fichier téléchargé avec :
-
-```powershell
-Get-FileHash .\Dofus-MultiCompte-Enhancer-Setup.exe -Algorithm SHA256
-gh attestation verify .\Dofus-MultiCompte-Enhancer-Setup.exe --repo silverspy/Dofus-MultiCompte-Enhancer
-```
-
-Comparez la première empreinte avec celle de `SHA256SUMS.txt`. L'attestation confirme la provenance du build GitHub ; elle ne constitue pas à elle seule une garantie d'absence de logiciel malveillant.
+La version est distribuée sans signature Authenticode publique et Windows peut donc afficher un avertissement SmartScreen. GitHub calcule automatiquement l'empreinte SHA-256 de chaque fichier et l'inclut dans les métadonnées de la Release.
 
 Les réglages et les personnages détectés sont enregistrés dans :
 
@@ -84,7 +77,7 @@ python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
-L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipeline Windows construit l'EXE brut, l'archive portable et l'installateur à chaque changement ciblant `main`, puis publie automatiquement les trois fichiers lors de l'envoi d'un tag `v*`.
+L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipeline Windows construit l'EXE portable et l'installateur à chaque changement ciblant `main`, puis publie automatiquement ces deux fichiers lors de l'envoi d'un tag `v*`.
 
 #### Signature Windows hors Store
 
@@ -138,18 +131,11 @@ Choose a package from the [latest Release](https://github.com/silverspy/Dofus-Mu
 | Package | Best for |
 |---|---|
 | **`Dofus-MultiCompte-Enhancer-Setup.exe`** | A standard per-user Windows installation with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. |
-| **`Dofus-MultiCompte-Enhancer-Portable.zip`** | No installer: extract it anywhere and run the EXE directly. Portable updates replace and restart the application automatically. |
+| **`Dofus-MultiCompte-Enhancer-Portable.exe`** | No installer: place this executable anywhere and run it directly. Portable updates replace and restart the application automatically. |
 
 Python is not required for the released executable. Published builds use Authenticode when the release certificate is configured in GitHub Actions. A new signing identity can still trigger SmartScreen temporarily while its reputation develops.
 
-Version `0.3.0` is distributed without a publicly trusted Authenticode signature, so Windows may display a SmartScreen warning. Every Release still includes `SHA256SUMS.txt` and a GitHub attestation produced by the official workflow. Verify a downloaded file with:
-
-```powershell
-Get-FileHash .\Dofus-MultiCompte-Enhancer-Setup.exe -Algorithm SHA256
-gh attestation verify .\Dofus-MultiCompte-Enhancer-Setup.exe --repo silverspy/Dofus-MultiCompte-Enhancer
-```
-
-Compare the first hash with `SHA256SUMS.txt`. The attestation establishes GitHub build provenance; by itself, it does not guarantee that software is free from malicious behavior.
+The application is distributed without a publicly trusted Authenticode signature, so Windows may display a SmartScreen warning. GitHub automatically computes each file's SHA-256 digest and includes it in the Release metadata.
 
 Settings and detected characters are stored in:
 
@@ -169,7 +155,7 @@ python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
-The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The Windows pipeline builds the raw EXE, portable archive, and installer for every change targeting `main`, then publishes all three files automatically when a `v*` tag is pushed.
+The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The Windows pipeline builds the portable EXE and installer for every change targeting `main`, then publishes both files automatically when a `v*` tag is pushed.
 
 #### Windows signing for non-Store distribution
 

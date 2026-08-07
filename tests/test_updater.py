@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import updater
 
 
@@ -25,3 +27,14 @@ def test_update_asset_matches_distribution_mode() -> None:
 
     assert updater.select_update_asset(release, installed=True).name == updater.SETUP_ASSET
     assert updater.select_update_asset(release, installed=False).name == updater.PORTABLE_ASSET
+
+
+def test_portable_update_replaces_the_executable_without_an_archive(tmp_path: Path) -> None:
+    script_path = tmp_path / "portable-update.ps1"
+
+    updater._write_portable_update_script(script_path)
+    script = script_path.read_text(encoding="utf-8-sig")
+
+    assert "[string]$Package" in script
+    assert "Copy-Item -LiteralPath $Package" in script
+    assert "Expand-Archive" not in script
