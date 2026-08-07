@@ -684,28 +684,38 @@ def login_characters(
         invitation_send_seconds = 0.0
         invitation_accept_seconds = 0.0
         print(f"Waiting for {leader_player.pseudo} to enter the game...", flush=True)
-        for index, target in enumerate(targets):
-            command = f"/invite {target.pseudo}"
+        invitations_by_handle: dict[int, dict[str, object]] = {}
+        for target in targets:
             invitation: dict[str, object] = {
                 "target": target.pseudo,
-                "command": command,
+                "command": f"/invite {target.pseudo}",
                 "sent": False,
                 "accepted": False,
                 "attempts": 0,
             }
             invitations.append(invitation)
+            invitations_by_handle[target.window_handle] = invitation
 
-            # Confirm each command by waiting for the ACCEPT button to appear.
-            # If focus or loading races with the command, retry only the failed
-            # invitation instead of restarting the whole group.
-            attempt_timeouts = (3.0, 6.0, max(8.0, invitation_timeout))
-            for attempt, accept_timeout in enumerate(attempt_timeouts, start=1):
+        # Run several passes over only the missing characters. This gives a
+        # loading client time to become ready without blocking later accounts,
+        # and makes a lost chat command result in a targeted reinvitation.
+        pending_targets = list(targets)
+        attempt_timeouts = (3.0, 7.0, max(10.0, invitation_timeout))
+        for attempt, accept_timeout in enumerate(attempt_timeouts, start=1):
+            if not pending_targets:
+                break
+            failed_this_pass: list[PlayerWindow] = []
+            for index, target in enumerate(pending_targets):
+                invitation = invitations_by_handle[target.window_handle]
+                command = str(invitation["command"])
                 send_started = time.monotonic()
                 execute_chat_command_on_window(
                     leader_player.window_handle,
                     command,
                     submit=True,
-                    wait_timeout=chat_timeout if index == 0 and attempt == 1 else 8.0,
+                    wait_timeout=(
+                        chat_timeout if attempt == 1 and index == 0 else 8.0
+                    ),
                     poll_interval=0.35,
                 )
                 invitation_send_seconds += time.monotonic() - send_started
@@ -713,7 +723,7 @@ def login_characters(
                 invitation["attempts"] = attempt
                 print(
                     f"  Invitation sent to {target.pseudo}"
-                    f" (attempt {attempt}/3).",
+                    f" (attempt {attempt}/{len(attempt_timeouts)}).",
                     flush=True,
                 )
 
@@ -724,13 +734,12 @@ def login_characters(
                     )
                 except TimeoutError:
                     invitation_accept_seconds += time.monotonic() - accept_started
-                    if attempt == len(attempt_timeouts):
-                        raise
+                    failed_this_pass.append(target)
                     print(
-                        f"  Invitation not confirmed for {target.pseudo}; retrying...",
+                        f"  Invitation not confirmed for {target.pseudo}; "
+                        "queued for reinvitation.",
                         flush=True,
                     )
-                    time.sleep(0.35)
                     continue
 
                 invitation_accept_seconds += time.monotonic() - accept_started
@@ -740,7 +749,19 @@ def login_characters(
                     f"  {target.pseudo} accepted ({button.confidence:.0%}).",
                     flush=True,
                 )
-                break
+
+            pending_targets = failed_this_pass
+            if pending_targets and attempt < len(attempt_timeouts):
+                missing_names = ", ".join(target.pseudo for target in pending_targets)
+                print(f"Reinviting missing character(s): {missing_names}.", flush=True)
+                time.sleep(0.75)
+
+        if pending_targets:
+            missing_names = ", ".join(target.pseudo for target in pending_targets)
+            raise TimeoutError(
+                "Group invitation could not be confirmed after "
+                f"{len(attempt_timeouts)} attempts for: {missing_names}."
+            )
 
         timings["invitations_sent_seconds"] = round(invitation_send_seconds, 3)
         timings["invitations_accepted_seconds"] = round(invitation_accept_seconds, 3)

@@ -30,6 +30,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 RestartApplications=yes
 Uninstallable=yes
+#ifdef EnableCodeSigning
+SignTool=dmce
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

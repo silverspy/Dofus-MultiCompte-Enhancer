@@ -38,6 +38,7 @@ Passez au personnage précédent ou suivant avec une touche clavier, un bouton d
 | 🎛️ | **Configurer chaque raccourci** avec votre clavier, vos boutons de souris ou votre molette. |
 | 🌍 | **Utiliser l'application en français ou en anglais** depuis le menu des paramètres. |
 | 🔄 | **Être averti des nouvelles versions et les installer automatiquement** sans rechercher ni remplacer manuellement l'exécutable. |
+| 🖥️ | **Réduire, restaurer ou quitter clairement l'application** depuis les paramètres ou par clic droit sur son icône dans la zone de notification Windows. |
 
 <p align="center">
   <img src="docs/images/toolbar-vertical.png" height="390" alt="Barre verticale avec chef de groupe et personnage actif" />
@@ -54,7 +55,7 @@ Choisissez votre format depuis la [dernière Release](https://github.com/silvers
 | **`Dofus-MultiCompte-Enhancer-Setup.exe`** | Installation Windows classique dans votre profil, raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. |
 | **`Dofus-MultiCompte-Enhancer-Portable.zip`** | Aucun installateur : décompressez l'archive où vous le souhaitez et lancez directement l'EXE. La mise à jour portable remplace et relance automatiquement l'application. |
 
-Aucune installation de Python n'est nécessaire. Windows peut afficher un avertissement SmartScreen, car l'exécutable n'est pas signé numériquement.
+Aucune installation de Python n'est nécessaire. Les versions publiées sont signées avec Authenticode lorsque le certificat de publication est configuré dans GitHub Actions. Une nouvelle identité de signature peut malgré tout afficher temporairement SmartScreen pendant que sa réputation se construit.
 
 Les réglages et les personnages détectés sont enregistrés dans :
 
@@ -75,6 +76,18 @@ python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
 L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipeline Windows construit l'EXE brut, l'archive portable et l'installateur à chaque changement ciblant `main`, puis publie automatiquement les trois fichiers lors de l'envoi d'un tag `v*`.
+
+#### Signature Windows hors Store
+
+La pipeline accepte un certificat Authenticode OV, EV ou Microsoft Artifact Signing exporté au format PFX. Configurez les secrets GitHub Actions `WINDOWS_CERTIFICATE_BASE64` et `WINDOWS_CERTIFICATE_PASSWORD` : l'EXE, l'installateur et le désinstalleur seront signés en SHA-256 et horodatés. Sans ces secrets, le build reste disponible mais non signé.
+
+Pour tester localement le processus avec un certificat auto-signé :
+
+```powershell
+.\scripts\New-DevelopmentCodeSigningCertificate.ps1
+```
+
+Le PFX est créé dans le dossier ignoré `certificates`. Ce certificat de développement ne donne aucune confiance publique à SmartScreen et ne doit jamais être publié.
 
 ---
 
@@ -107,6 +120,7 @@ Move to the previous or next character with a keyboard key, mouse button, or the
 | 🎛️ | **Configure every shortcut** using your keyboard, mouse buttons, or wheel. |
 | 🌍 | **Use the application in French or English** from the settings panel. |
 | 🔄 | **Get notified about new releases and install them automatically** without manually finding or replacing the executable. |
+| 🖥️ | **Minimize, restore, or clearly quit the application** from Settings or by right-clicking its Windows notification-area icon. |
 
 ### Download: portable or installer
 
@@ -117,7 +131,7 @@ Choose a package from the [latest Release](https://github.com/silverspy/Dofus-Mu
 | **`Dofus-MultiCompte-Enhancer-Setup.exe`** | A standard per-user Windows installation with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. |
 | **`Dofus-MultiCompte-Enhancer-Portable.zip`** | No installer: extract it anywhere and run the EXE directly. Portable updates replace and restart the application automatically. |
 
-Python is not required for the released executable. Windows may display a SmartScreen warning because the binary is not code-signed.
+Python is not required for the released executable. Published builds use Authenticode when the release certificate is configured in GitHub Actions. A new signing identity can still trigger SmartScreen temporarily while its reputation develops.
 
 Settings and detected characters are stored in:
 
@@ -138,6 +152,18 @@ python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 ```
 
 The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The Windows pipeline builds the raw EXE, portable archive, and installer for every change targeting `main`, then publishes all three files automatically when a `v*` tag is pushed.
+
+#### Windows signing for non-Store distribution
+
+The pipeline accepts an OV, EV, or Microsoft Artifact Signing Authenticode certificate exported as a PFX. Configure the GitHub Actions secrets `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`; the application EXE, installer, and uninstaller are then SHA-256 signed and timestamped. Builds remain available but unsigned when those secrets are absent.
+
+For a local signing-flow test with a self-signed certificate:
+
+```powershell
+.\scripts\New-DevelopmentCodeSigningCertificate.ps1
+```
+
+The PFX is created in the ignored `certificates` directory. This development certificate provides no public SmartScreen trust and must never be published.
 
 ## Avertissement / Disclaimer
 
