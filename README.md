@@ -57,6 +57,15 @@ Choisissez votre format depuis la [dernière Release](https://github.com/silvers
 
 Aucune installation de Python n'est nécessaire. Les versions publiées sont signées avec Authenticode lorsque le certificat de publication est configuré dans GitHub Actions. Une nouvelle identité de signature peut malgré tout afficher temporairement SmartScreen pendant que sa réputation se construit.
 
+La version `0.3.0` est distribuée sans signature Authenticode publique et Windows peut donc afficher un avertissement SmartScreen. Chaque Release fournit néanmoins `SHA256SUMS.txt` et une attestation GitHub générée par la pipeline officielle. Vous pouvez vérifier l'origine d'un fichier téléchargé avec :
+
+```powershell
+Get-FileHash .\Dofus-MultiCompte-Enhancer-Setup.exe -Algorithm SHA256
+gh attestation verify .\Dofus-MultiCompte-Enhancer-Setup.exe --repo silverspy/Dofus-MultiCompte-Enhancer
+```
+
+Comparez la première empreinte avec celle de `SHA256SUMS.txt`. L'attestation confirme la provenance du build GitHub ; elle ne constitue pas à elle seule une garantie d'absence de logiciel malveillant.
+
 Les réglages et les personnages détectés sont enregistrés dans :
 
 ```text
@@ -132,6 +141,15 @@ Choose a package from the [latest Release](https://github.com/silverspy/Dofus-Mu
 | **`Dofus-MultiCompte-Enhancer-Portable.zip`** | No installer: extract it anywhere and run the EXE directly. Portable updates replace and restart the application automatically. |
 
 Python is not required for the released executable. Published builds use Authenticode when the release certificate is configured in GitHub Actions. A new signing identity can still trigger SmartScreen temporarily while its reputation develops.
+
+Version `0.3.0` is distributed without a publicly trusted Authenticode signature, so Windows may display a SmartScreen warning. Every Release still includes `SHA256SUMS.txt` and a GitHub attestation produced by the official workflow. Verify a downloaded file with:
+
+```powershell
+Get-FileHash .\Dofus-MultiCompte-Enhancer-Setup.exe -Algorithm SHA256
+gh attestation verify .\Dofus-MultiCompte-Enhancer-Setup.exe --repo silverspy/Dofus-MultiCompte-Enhancer
+```
+
+Compare the first hash with `SHA256SUMS.txt`. The attestation establishes GitHub build provenance; by itself, it does not guarantee that software is free from malicious behavior.
 
 Settings and detected characters are stored in:
 
