@@ -52,7 +52,7 @@ Choisissez votre format depuis la [dernière Release](https://github.com/silvers
 
 | Version | Pour quel usage ? |
 |---|---|
-| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | Installation Windows classique dans votre profil, raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. |
+| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | Installation Windows classique optimisée pour un démarrage rapide, avec raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. |
 | **`Dofus-MultiCompte-Enhancer-Portable.exe`** | Aucun installateur : placez cet exécutable où vous le souhaitez et lancez-le directement. La mise à jour portable remplace et relance automatiquement l'application. |
 
 Aucune installation de Python n'est nécessaire. Les versions publiées sont signées avec Authenticode lorsque le certificat de publication est configuré dans GitHub Actions. Une nouvelle identité de signature peut malgré tout afficher temporairement SmartScreen pendant que sa réputation se construit.
@@ -75,9 +75,10 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
+python -m PyInstaller --noconfirm --clean --distpath dist-installed --workpath build-installed Dofus-MultiCompte-Enhancer-Onedir.spec
 ```
 
-L'exécutable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. La pipeline Windows construit l'EXE portable et l'installateur à chaque changement ciblant `main`, puis publie automatiquement ces deux fichiers lors de l'envoi d'un tag `v*`.
+L'EXE portable est généré dans `dist\Dofus-MultiCompte-Enhancer.exe`. L'arborescence rapide utilisée par l'installateur est générée dans `dist-installed\Dofus-MultiCompte-Enhancer`. La pipeline Windows construit et publie automatiquement les deux distributions lors de l'envoi d'un tag `v*`.
 
 #### Signature Windows hors Store
 
@@ -130,7 +131,7 @@ Choose a package from the [latest Release](https://github.com/silverspy/Dofus-Mu
 
 | Package | Best for |
 |---|---|
-| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | A standard per-user Windows installation with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. |
+| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | A standard per-user Windows installation optimized for fast startup, with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. |
 | **`Dofus-MultiCompte-Enhancer-Portable.exe`** | No installer: place this executable anywhere and run it directly. Portable updates replace and restart the application automatically. |
 
 Python is not required for the released executable. Published builds use Authenticode when the release certificate is configured in GitHub Actions. A new signing identity can still trigger SmartScreen temporarily while its reputation develops.
@@ -153,9 +154,10 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
+python -m PyInstaller --noconfirm --clean --distpath dist-installed --workpath build-installed Dofus-MultiCompte-Enhancer-Onedir.spec
 ```
 
-The executable is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The Windows pipeline builds the portable EXE and installer for every change targeting `main`, then publishes both files automatically when a `v*` tag is pushed.
+The portable EXE is generated at `dist\Dofus-MultiCompte-Enhancer.exe`. The fast application tree used by the installer is generated at `dist-installed\Dofus-MultiCompte-Enhancer`. The Windows pipeline builds and publishes both distributions automatically when a `v*` tag is pushed.
 
 #### Windows signing for non-Store distribution
 

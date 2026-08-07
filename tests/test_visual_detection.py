@@ -5,9 +5,12 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
+import chat_vision
 import dofus_character_login
 from chat_vision import detect_chat_bar
 from dofus_character_login import (
+    PlayerWindow,
+    accept_group_invitation,
     detect_invitation_accept_button,
     detect_start_play_button,
     read_selected_pseudo,
@@ -33,6 +36,39 @@ def test_chat_bar_detects_saturated_status_dot_over_dark_bar() -> None:
     assert abs(detection.anchor_y - 585) <= 1
     assert detection.click_x == 120
     assert detection.confidence >= 0.75
+
+
+def test_chat_command_batch_detects_the_input_only_once(monkeypatch) -> None:
+    image = np.zeros((20, 20, 3), dtype=np.uint8)
+    detection = chat_vision.Detection(1, 2, 3, 4, 0.99)
+    captures: list[int] = []
+    typed: list[str] = []
+
+    monkeypatch.setattr(
+        chat_vision,
+        "capture_window",
+        lambda hwnd: (captures.append(hwnd) or image, 0, 0),
+    )
+    monkeypatch.setattr(chat_vision, "detect_chat_bar", lambda _image: detection)
+    monkeypatch.setattr(chat_vision, "activate_window", lambda _hwnd: None)
+    monkeypatch.setattr(chat_vision, "get_client_geometry", lambda _hwnd: (10, 20, 800, 600))
+    monkeypatch.setattr(
+        chat_vision,
+        "click_and_type",
+        lambda _x, _y, command, _submit: typed.append(command),
+    )
+    monkeypatch.setattr(chat_vision, "get_window_title", lambda _hwnd: "Leader")
+    monkeypatch.setattr(chat_vision.time, "sleep", lambda _seconds: None)
+
+    results = chat_vision.execute_chat_commands_on_window(
+        101,
+        ["/invite One", "/invite Two", "/invite Three"],
+        submit=True,
+    )
+
+    assert captures == [101]
+    assert typed == ["/invite One", "/invite Two", "/invite Three"]
+    assert [result.command for result in results] == typed
 
 
 def test_chat_bar_rejects_dot_without_dark_input_background() -> None:
@@ -75,6 +111,93 @@ def test_invitation_ocr_rejects_unrelated_green_action() -> None:
         detect_invitation_accept_button(image, FakeOcr(["ACHETER"], [0.99]))
         is None
     )
+
+
+def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> None:
+    invitation = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    cv2.rectangle(invitation, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
+    cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    captures = iter([invitation, cleared])
+    settle_delays: list[float] = []
+    clicks: list[tuple[int, int]] = []
+
+    class RejectOcrCalls:
+        def __call__(self, _image: np.ndarray) -> SimpleNamespace:
+            raise AssertionError("The polling path must not invoke OCR")
+
+    player = PlayerWindow("Target", 0.9, 101, "Account", True)
+    monkeypatch.setattr(
+        dofus_character_login,
+        "list_dofus_windows",
+        lambda: [(101, "Target")],
+    )
+    monkeypatch.setattr(
+        dofus_character_login,
+        "capture_window",
+        lambda _hwnd, *, settle_delay: (
+            settle_delays.append(settle_delay) or next(captures),
+            0,
+            0,
+        ),
+    )
+    monkeypatch.setattr(dofus_character_login, "activate_window", lambda _hwnd: None)
+    monkeypatch.setattr(
+        dofus_character_login,
+        "get_client_geometry",
+        lambda _hwnd: (10, 20, 1000, 600),
+    )
+    monkeypatch.setattr(
+        dofus_character_login,
+        "click_screen",
+        lambda x, y: clicks.append((x, y)),
+    )
+    monkeypatch.setattr(dofus_character_login.time, "sleep", lambda _seconds: None)
+
+    button = accept_group_invitation(player, ocr=RejectOcrCalls(), timeout=1.0)
+
+    assert button.click_x in range(735, 746)
+    assert clicks == [(10 + button.click_x, 20 + button.click_y)]
+    assert settle_delays == [0.08, 0.04]
+
+
+def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> None:
+    invitation = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    cv2.rectangle(invitation, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
+    cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    captures = iter([invitation, invitation, cleared])
+    clicks: list[tuple[int, int]] = []
+    sleeps: list[float] = []
+
+    player = PlayerWindow("Target", 0.9, 101, "Account", True)
+    monkeypatch.setattr(
+        dofus_character_login,
+        "list_dofus_windows",
+        lambda: [(101, "Target")],
+    )
+    monkeypatch.setattr(
+        dofus_character_login,
+        "capture_window",
+        lambda _hwnd, **_kwargs: (next(captures), 0, 0),
+    )
+    monkeypatch.setattr(dofus_character_login, "activate_window", lambda _hwnd: None)
+    monkeypatch.setattr(
+        dofus_character_login,
+        "get_client_geometry",
+        lambda _hwnd: (10, 20, 1000, 600),
+    )
+    monkeypatch.setattr(
+        dofus_character_login,
+        "click_screen",
+        lambda x, y: clicks.append((x, y)),
+    )
+    monkeypatch.setattr(dofus_character_login.time, "sleep", sleeps.append)
+
+    button = accept_group_invitation(player, timeout=1.0)
+
+    assert clicks == [(10 + button.click_x, 20 + button.click_y)]
+    assert sleeps == [0.20, 0.30]
 
 
 def test_account_count_is_inferred_after_window_set_stabilizes(monkeypatch) -> None:

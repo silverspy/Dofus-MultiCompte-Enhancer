@@ -25,7 +25,7 @@ from chat_vision import (
     activate_window,
     capture_window,
     click_screen,
-    execute_chat_command_on_window,
+    execute_chat_commands_on_window,
     get_client_geometry,
     list_windows_by_executable,
 )
@@ -105,7 +105,7 @@ def detect_character_play_button(
 
 def detect_start_play_button(
     image: np.ndarray,
-    ocr: RapidOCR,
+    ocr: RapidOCR | None,
 ) -> CharacterButton | None:
     """Locate the large central PLAY button on the Dofus landing screen."""
     height, width = image.shape[:2]
@@ -176,6 +176,10 @@ def detect_start_play_button(
     if not candidates:
         return None
 
+    _, button = max(candidates, key=lambda item: item[0])
+    if ocr is None:
+        return button
+
     enlarged = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     result = ocr(enlarged)
     text_confidence = max(
@@ -189,7 +193,6 @@ def detect_start_play_button(
     if text_confidence < 0.85:
         return None
 
-    _, button = max(candidates, key=lambda item: item[0])
     return CharacterButton(
         button.click_x,
         button.click_y,
@@ -305,7 +308,13 @@ def accept_group_invitation(
     timeout: float = 60.0,
     poll_interval: float = 0.35,
 ) -> InvitationButton:
-    """Wait for and accept the invitation received by a character window."""
+    """Wait for and accept the invitation received by a character window.
+
+    The full-screen visual detector is deliberately used without OCR here.
+    Its panel, colour, size, and aspect-ratio checks are fast enough to run on
+    every poll, while OCR remains available to callers that need additional
+    diagnostics or validation.
+    """
     windows = list_dofus_windows()
     if any(hwnd == player.window_handle for hwnd, _ in windows):
         hwnd = player.window_handle
@@ -325,22 +334,26 @@ def accept_group_invitation(
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        image, _, _ = capture_window(hwnd)
-        button = detect_invitation_accept_button(image, ocr)
+        image, _, _ = capture_window(hwnd, settle_delay=0.08)
+        button = detect_invitation_accept_button(image)
         if button is not None:
             detected_button = button
-            # Confirm the click as well: a simultaneous focus change could make
-            # the invitation appear accepted while its panel remained visible.
-            for _click_attempt in range(3):
-                activate_window(hwnd)
-                origin_x, origin_y, _, _ = get_client_geometry(hwnd)
-                click_screen(origin_x + button.click_x, origin_y + button.click_y)
-                time.sleep(0.25)
-                verification, _, _ = capture_window(hwnd)
-                remaining = detect_invitation_accept_button(verification, ocr)
+            activate_window(hwnd)
+            origin_x, origin_y, _, _ = get_client_geometry(hwnd)
+            click_screen(origin_x + button.click_x, origin_y + button.click_y)
+
+            # Never double-click while the invitation panel is animating out.
+            # Two spaced confirmations must still see the button before the
+            # outer polling loop is allowed to perform another single click.
+            remaining: InvitationButton | None = button
+            for confirmation_delay in (0.20, 0.30):
+                time.sleep(confirmation_delay)
+                verification, _, _ = capture_window(hwnd, settle_delay=0.04)
+                remaining = detect_invitation_accept_button(verification)
                 if remaining is None:
                     return detected_button
-                button = remaining
+            time.sleep(max(0.25, poll_interval))
+            continue
         time.sleep(max(0.05, poll_interval))
     raise TimeoutError(
         f"ACCEPT button was not found for {player.pseudo} within {timeout:.0f}s."
@@ -355,7 +368,7 @@ def wait_for_dofus_windows(
     *,
     initial_wait: float = 0.0,
     launch_wait: float = 180.0,
-    stability_wait: float = 5.0,
+    stability_wait: float = 2.0,
     expected_count: int | None = None,
 ) -> list[tuple[int, str]]:
     """Detect the selected account count from the windows Ankama launches.
@@ -394,7 +407,7 @@ def wait_for_dofus_windows(
     )
     if should_launch:
         print("Starting the selected Ankama accounts.", flush=True)
-        launch_dofus(poll_interval=1.0)
+        launch_dofus(poll_interval=0.5)
         print("Launcher clicked; waiting for Dofus windows...", flush=True)
 
     deadline = time.monotonic() + launch_wait
@@ -458,9 +471,55 @@ def try_read_character_window(
 ) -> tuple[PlayerWindow, CharacterButton] | None:
     """Read a ready selection screen without clicking its PLAY button."""
     image, _, _ = capture_window(hwnd)
-    pseudo_data = read_selected_pseudo(image, ocr)
+    return try_read_character_image(
+        image,
+        hwnd,
+        initial_title,
+        ocr=ocr,
+        play_template=play_template,
+        diagnostics_dir=diagnostics_dir,
+    )
+
+
+def try_read_character_image(
+    image: np.ndarray,
+    hwnd: int,
+    initial_title: str,
+    *,
+    ocr: RapidOCR,
+    play_template: np.ndarray,
+    diagnostics_dir: Path | None,
+) -> tuple[PlayerWindow, CharacterButton] | None:
+    """Read character data from an already captured selection screen."""
     button = detect_character_play_button(image, play_template)
-    if pseudo_data is None or button is None:
+    if button is None:
+        return None
+
+    player = read_character_identity(
+        image,
+        hwnd,
+        initial_title,
+        button,
+        ocr=ocr,
+        diagnostics_dir=diagnostics_dir,
+    )
+    if player is None:
+        return None
+    return player, button
+
+
+def read_character_identity(
+    image: np.ndarray,
+    hwnd: int,
+    initial_title: str,
+    button: CharacterButton,
+    *,
+    ocr: RapidOCR,
+    diagnostics_dir: Path | None,
+) -> PlayerWindow | None:
+    """Read a pseudo from a saved selection frame after PLAY was clicked."""
+    pseudo_data = read_selected_pseudo(image, ocr)
+    if pseudo_data is None:
         return None
 
     pseudo, ocr_confidence = pseudo_data
@@ -474,15 +533,12 @@ def try_read_character_window(
             diagnostics_dir / f"character-{safe_name}.png",
         )
 
-    return (
-        PlayerWindow(
-            pseudo=pseudo,
-            ocr_confidence=ocr_confidence,
-            window_handle=hwnd,
-            window_title_before=initial_title,
-            clicked_play=False,
-        ),
-        button,
+    return PlayerWindow(
+        pseudo=pseudo,
+        ocr_confidence=ocr_confidence,
+        window_handle=hwnd,
+        window_title_before=initial_title,
+        clicked_play=False,
     )
 
 
@@ -579,6 +635,238 @@ def process_character_window(
     )
 
 
+def resolve_group_leader(
+    players: list[PlayerWindow],
+    configured_leader: str,
+) -> tuple[PlayerWindow, str]:
+    """Resolve the configured leader, falling back to the first character."""
+    leader = next(
+        (
+            player
+            for player in players
+            if player.pseudo.casefold() == configured_leader.casefold()
+        ),
+        None,
+    )
+    if leader is not None:
+        return leader, leader.pseudo
+    if not players:
+        raise RuntimeError("No character was detected.")
+    return players[0], players[0].pseudo
+
+
+def players_with_loaded_interfaces(
+    players: list[PlayerWindow],
+    windows: list[tuple[int, str]],
+) -> set[int]:
+    """Return handles whose title confirms that the character entered the game."""
+    titles = {handle: title.strip() for handle, title in windows}
+    loaded: set[int] = set()
+    for player in players:
+        title = titles.get(player.window_handle, "")
+        if title.casefold().startswith(player.pseudo.casefold()):
+            loaded.add(player.window_handle)
+    return loaded
+
+
+def wait_for_game_interfaces(
+    players: list[PlayerWindow],
+    *,
+    timeout: float,
+    poll_interval: float = 0.20,
+) -> None:
+    """Wait without changing focus until every Dofus client is in the game UI."""
+    expected = {player.window_handle for player in players}
+    deadline = time.monotonic() + max(1.0, timeout)
+    previous_loaded: set[int] = set()
+    while time.monotonic() < deadline:
+        loaded = players_with_loaded_interfaces(players, list_dofus_windows())
+        if loaded != previous_loaded:
+            print(
+                f"Game interfaces ready: {len(loaded)}/{len(expected)}.",
+                flush=True,
+            )
+            previous_loaded = loaded
+        if loaded == expected:
+            return
+        time.sleep(max(0.05, poll_interval))
+    missing = ", ".join(
+        player.pseudo for player in players if player.window_handle not in previous_loaded
+    )
+    raise TimeoutError(f"Game interface did not become ready for: {missing}.")
+
+
+def invitation_attempt_timeouts(final_timeout: float) -> tuple[float, ...]:
+    """Return short probes followed by one final, user-configurable wait."""
+    return 3.0, 7.0, max(10.0, float(final_timeout))
+
+
+def invite_group_members(
+    leader: PlayerWindow,
+    targets: list[PlayerWindow],
+    *,
+    ocr: RapidOCR,
+    chat_timeout: float,
+    invitation_timeout: float,
+) -> tuple[list[dict[str, object]], float, float]:
+    """Invite every target and retry only characters still missing."""
+    invitations = [
+        {
+            "target": target.pseudo,
+            "command": f"/invite {target.pseudo}",
+            "sent": False,
+            "accepted": False,
+            "attempts": 0,
+        }
+        for target in targets
+    ]
+    invitations_by_handle = {
+        target.window_handle: invitation
+        for target, invitation in zip(targets, invitations, strict=True)
+    }
+    send_seconds = 0.0
+    accept_seconds = 0.0
+    pending_targets = list(targets)
+    timeouts = invitation_attempt_timeouts(invitation_timeout)
+
+    for attempt, accept_timeout in enumerate(timeouts, start=1):
+        if not pending_targets:
+            break
+        commands = [
+            str(invitations_by_handle[target.window_handle]["command"])
+            for target in pending_targets
+        ]
+        send_started = time.monotonic()
+        execute_chat_commands_on_window(
+            leader.window_handle,
+            commands,
+            submit=True,
+            wait_timeout=(chat_timeout if attempt == 1 else 8.0),
+            poll_interval=0.25,
+            command_interval=0.14,
+        )
+        send_seconds += time.monotonic() - send_started
+        for target in pending_targets:
+            invitation = invitations_by_handle[target.window_handle]
+            invitation["sent"] = True
+            invitation["attempts"] = attempt
+            print(
+                f"  Invitation sent to {target.pseudo} "
+                f"(attempt {attempt}/{len(timeouts)}).",
+                flush=True,
+            )
+
+        # All invitations now exist before focus leaves the leader. Walk the
+        # target windows only after the complete command batch was submitted.
+        failed_this_pass: list[PlayerWindow] = []
+        for target in pending_targets:
+            invitation = invitations_by_handle[target.window_handle]
+            accept_started = time.monotonic()
+            try:
+                button = accept_group_invitation(
+                    target,
+                    ocr=ocr,
+                    timeout=accept_timeout,
+                )
+            except TimeoutError:
+                accept_seconds += time.monotonic() - accept_started
+                failed_this_pass.append(target)
+                print(
+                    f"  Invitation not confirmed for {target.pseudo}; "
+                    "queued for reinvitation.",
+                    flush=True,
+                )
+                continue
+
+            accept_seconds += time.monotonic() - accept_started
+            invitation["accepted"] = True
+            invitation["accept_confidence"] = round(button.confidence, 5)
+            print(
+                f"  {target.pseudo} accepted ({button.confidence:.0%}).",
+                flush=True,
+            )
+
+        pending_targets = failed_this_pass
+        if pending_targets and attempt < len(timeouts):
+            missing_names = ", ".join(target.pseudo for target in pending_targets)
+            print(f"Reinviting missing character(s): {missing_names}.", flush=True)
+            time.sleep(0.75)
+
+    if pending_targets:
+        missing_names = ", ".join(target.pseudo for target in pending_targets)
+        raise TimeoutError(
+            "Group invitation could not be confirmed after "
+            f"{len(timeouts)} attempts for: {missing_names}."
+        )
+
+    return invitations, send_seconds, accept_seconds
+
+
+def run_group_invitation_phase(
+    players: list[PlayerWindow],
+    *,
+    configured_leader: str,
+    ocr: RapidOCR,
+    chat_timeout: float,
+    invitation_timeout: float,
+    post_login_delay: float,
+) -> tuple[str, list[dict[str, object]], dict[str, object]]:
+    """Settle the clients, form the group, and return focus to its leader."""
+    leader, resolved_name = resolve_group_leader(players, configured_leader)
+    if configured_leader and resolved_name.casefold() != configured_leader.casefold():
+        print(
+            f"Configured leader was not found; using {resolved_name}.",
+            flush=True,
+        )
+    targets = [
+        player for player in players if player.window_handle != leader.window_handle
+    ]
+    phase_started = time.monotonic()
+    phase_timings: dict[str, object] = {}
+    print("Waiting for all game interfaces before invitations...", flush=True)
+    interfaces_started = time.monotonic()
+    wait_for_game_interfaces(players, timeout=chat_timeout)
+    phase_timings["game_interfaces_ready_seconds"] = round(
+        time.monotonic() - interfaces_started,
+        3,
+    )
+    settle_delay = max(0.0, float(post_login_delay))
+    if settle_delay:
+        print(
+            f"Stabilizing loaded interfaces for {settle_delay:.2f}s...",
+            flush=True,
+        )
+        settle_started = time.monotonic()
+        time.sleep(settle_delay)
+        phase_timings["post_login_settle_seconds"] = round(
+            time.monotonic() - settle_started,
+            3,
+        )
+
+    print(f"Waiting for {leader.pseudo} to enter the game...", flush=True)
+    invitations, send_seconds, accept_seconds = invite_group_members(
+        leader,
+        targets,
+        ocr=ocr,
+        chat_timeout=chat_timeout,
+        invitation_timeout=invitation_timeout,
+    )
+    phase_timings.update(
+        {
+            "invitations_sent_seconds": round(send_seconds, 3),
+            "invitations_accepted_seconds": round(accept_seconds, 3),
+            "invitation_phase_total_seconds": round(
+                time.monotonic() - phase_started,
+                3,
+            ),
+        }
+    )
+
+    activate_window(leader.window_handle)
+    print(f"Returned to group leader {leader.pseudo}.", flush=True)
+    return resolved_name, invitations, phase_timings
+
+
 def login_characters(
     *,
     output_path: Path,
@@ -587,11 +875,11 @@ def login_characters(
     diagnostics_dir: Path | None = None,
     initial_wait: float = 0.0,
     selection_timeout: float = 120.0,
-    leader: str = "Silvcra",
+    leader: str = "",
     invite_others: bool = True,
     chat_timeout: float = 180.0,
     invitation_timeout: float = 60.0,
-    post_login_delay: float = 2.5,
+    post_login_delay: float = 0.35,
 ) -> list[PlayerWindow]:
     workflow_started = time.monotonic()
     timings: dict[str, object] = {}
@@ -630,76 +918,105 @@ def login_characters(
     character_phase_started = time.monotonic()
     pending = [(index, hwnd, title) for index, (hwnd, title) in enumerate(windows, start=1)]
     processing_seconds = {hwnd: 0.0 for _, hwnd, _ in pending}
-    ready_to_play: list[tuple[int, PlayerWindow, CharacterButton]] = []
+    captured_selections: list[
+        tuple[int, int, str, np.ndarray, CharacterButton, float]
+    ] = []
     startup_clicked: set[int] = set()
+    play_click_seconds = 0.0
+    first_play_click_at: float | None = None
+    last_play_click_at: float | None = None
     deadline = character_phase_started + selection_timeout
     print(f"Scanning {len(windows)} character-selection screen(s)...", flush=True)
+    cursor = 0
     while pending and time.monotonic() < deadline:
-        progress = False
-        for index, hwnd, title in list(pending):
-            attempt_started = time.monotonic()
-            if hwnd not in startup_clicked:
-                startup_button = try_click_start_play(
-                    hwnd,
-                    ocr=ocr,
-                    dry_run=dry_run,
-                )
-                if startup_button is not None:
-                    startup_clicked.add(hwnd)
-                    processing_seconds[hwnd] += time.monotonic() - attempt_started
-                    progress = True
-                    print(
-                        f"  Window {index}: central PLAY "
-                        f"{'clicked' if not dry_run else 'detected'} "
-                        f"({startup_button.confidence:.0%}).",
-                        flush=True,
-                    )
-                    continue
-            ready = try_read_character_window(
-                hwnd,
-                title,
-                ocr=ocr,
-                play_template=template,
-                diagnostics_dir=diagnostics_dir,
-            )
-            processing_seconds[hwnd] += time.monotonic() - attempt_started
-            if ready is None:
-                continue
-            player, button = ready
-            if any(
-                existing.pseudo.casefold() == player.pseudo.casefold()
-                for _, existing, _ in ready_to_play
-            ):
-                raise RuntimeError(f"Duplicate OCR character name: {player.pseudo}")
-            ready_to_play.append((index, player, button))
-            pending.remove((index, hwnd, title))
-            progress = True
+        index, hwnd, title = pending[cursor]
+        attempt_started = time.monotonic()
+        image, _, _ = capture_window(hwnd, settle_delay=0.06)
+        button = detect_character_play_button(image, template)
+        processing_seconds[hwnd] += time.monotonic() - attempt_started
+
+        if button is not None:
+            clicked_at = time.monotonic()
+            if first_play_click_at is None:
+                first_play_click_at = clicked_at
+            click_started = time.monotonic()
+            if not dry_run:
+                click_character_play(hwnd, button)
+            play_click_seconds += time.monotonic() - click_started
+            last_play_click_at = time.monotonic()
             ready_after = time.monotonic() - character_phase_started
-            character_timings.append(
-                {
-                    "pseudo": player.pseudo,
-                    "ready_after_seconds": round(ready_after, 3),
-                    "processing_seconds": round(processing_seconds[hwnd], 3),
-                }
+            captured_selections.append(
+                (index, hwnd, title, image, button, ready_after)
             )
             print(
-                f"  {player.pseudo} ({player.ocr_confidence:.0%}) : "
-                f"selection ready at +{ready_after:.3f}s",
+                f"  Window {index}: character PLAY "
+                f"{'clicked' if not dry_run else 'detected'} "
+                f"at +{ready_after:.3f}s",
                 flush=True,
             )
-        if pending and not progress:
-            time.sleep(0.10)
+            pending.pop(cursor)
+            if pending:
+                cursor %= len(pending)
+            continue
+
+        if hwnd not in startup_clicked:
+            # A grey central button means that this window is still loading.
+            # Stay on it instead of visibly cycling through every account.
+            startup_button = detect_start_play_button(image, None)
+            if startup_button is not None:
+                if not dry_run:
+                    activate_window(hwnd)
+                    origin_x, origin_y, _, _ = get_client_geometry(hwnd)
+                    click_screen(
+                        origin_x + startup_button.click_x,
+                        origin_y + startup_button.click_y,
+                    )
+                startup_clicked.add(hwnd)
+                print(
+                    f"  Window {index}: central PLAY "
+                    f"{'clicked' if not dry_run else 'detected'} "
+                    f"({startup_button.confidence:.0%}).",
+                    flush=True,
+                )
+                # Start every account rapidly before waiting for character
+                # selection on the first one.
+                cursor = (cursor + 1) % len(pending)
+                continue
+
+        not_started_elsewhere = any(
+            candidate_hwnd not in startup_clicked
+            for _, candidate_hwnd, _ in pending
+            if candidate_hwnd != hwnd
+        )
+        if hwnd in startup_clicked and not_started_elsewhere:
+            cursor = (cursor + 1) % len(pending)
+            continue
+        time.sleep(0.06)
 
     if pending:
         handles = ", ".join(str(hwnd) for _, hwnd, _ in pending)
         raise RuntimeError(f"Selection screens incomplete after {selection_timeout:.0f}s: {handles}")
 
-    # All names and button positions are known now. Click every selection PLAY
-    # button as one tight batch instead of spacing clicks out with OCR work.
-    click_batch_started = time.monotonic()
-    for _index, player, button in ready_to_play:
-        if not dry_run:
-            click_character_play(player.window_handle, button)
+    # OCR is intentionally deferred until every PLAY click has been issued. It
+    # can take several seconds per image, but no longer spaces out the clicks.
+    print("Reading character names from saved selection frames...", flush=True)
+    for index, hwnd, title, image, button, ready_after in captured_selections:
+        recognition_started = time.monotonic()
+        player = read_character_identity(
+            image,
+            hwnd,
+            title,
+            button,
+            ocr=ocr,
+            diagnostics_dir=diagnostics_dir,
+        )
+        if player is None:
+            raise RuntimeError(f"Character name could not be read for window {index}.")
+        if any(
+            existing.pseudo.casefold() == player.pseudo.casefold()
+            for existing in players
+        ):
+            raise RuntimeError(f"Duplicate OCR character name: {player.pseudo}")
         players.append(
             PlayerWindow(
                 pseudo=player.pseudo,
@@ -709,11 +1026,28 @@ def login_characters(
                 clicked_play=not dry_run,
             )
         )
-    timings["character_play_clicks_seconds"] = round(
-        time.monotonic() - click_batch_started, 3
+        character_timings.append(
+            {
+                "pseudo": player.pseudo,
+                "ready_after_seconds": round(ready_after, 3),
+                "processing_seconds": round(processing_seconds[hwnd], 3),
+                "recognition_seconds": round(
+                    time.monotonic() - recognition_started,
+                    3,
+                ),
+            }
+        )
+        print(f"  Window {index}: {player.pseudo} ({player.ocr_confidence:.0%}).", flush=True)
+
+    timings["character_play_clicks_seconds"] = round(play_click_seconds, 3)
+    timings["character_play_sequence_seconds"] = round(
+        (last_play_click_at - first_play_click_at)
+        if first_play_click_at is not None and last_play_click_at is not None
+        else 0.0,
+        3,
     )
     print(
-        f"Clicked {len(ready_to_play)} character PLAY button(s) in "
+        f"Clicked {len(players)} character PLAY button(s) in "
         f"{timings['character_play_clicks_seconds']:.3f}s.",
         flush=True,
     )
@@ -725,131 +1059,15 @@ def login_characters(
 
     invitations: list[dict[str, object]] = []
     if invite_others and not dry_run:
-        leader_player = next(
-            (player for player in players if player.pseudo.casefold() == leader.casefold()),
-            None,
+        leader, invitations, invitation_timings = run_group_invitation_phase(
+            players,
+            configured_leader=leader,
+            ocr=ocr,
+            chat_timeout=chat_timeout,
+            invitation_timeout=invitation_timeout,
+            post_login_delay=post_login_delay,
         )
-        if leader_player is None:
-            if not players:
-                raise RuntimeError("No character was detected.")
-            leader_player = players[0]
-            leader = leader_player.pseudo
-            print(
-                f"Configured leader was not found; using {leader_player.pseudo}.",
-                flush=True,
-            )
-
-        targets = [
-            player for player in players
-            if player.window_handle != leader_player.window_handle
-        ]
-        invite_phase_started = time.monotonic()
-        invitation_send_seconds = 0.0
-        invitation_accept_seconds = 0.0
-        settle_delay = max(0.0, float(post_login_delay))
-        if settle_delay:
-            print(
-                f"Letting all clients connect for {settle_delay:.1f}s before invitations...",
-                flush=True,
-            )
-            settle_started = time.monotonic()
-            time.sleep(settle_delay)
-            timings["post_login_settle_seconds"] = round(
-                time.monotonic() - settle_started, 3
-            )
-        print(f"Waiting for {leader_player.pseudo} to enter the game...", flush=True)
-        invitations_by_handle: dict[int, dict[str, object]] = {}
-        for target in targets:
-            invitation: dict[str, object] = {
-                "target": target.pseudo,
-                "command": f"/invite {target.pseudo}",
-                "sent": False,
-                "accepted": False,
-                "attempts": 0,
-            }
-            invitations.append(invitation)
-            invitations_by_handle[target.window_handle] = invitation
-
-        # Run several passes over only the missing characters. This gives a
-        # loading client time to become ready without blocking later accounts,
-        # and makes a lost chat command result in a targeted reinvitation.
-        pending_targets = list(targets)
-        attempt_timeouts = (3.0, 7.0, max(10.0, invitation_timeout))
-        for attempt, accept_timeout in enumerate(attempt_timeouts, start=1):
-            if not pending_targets:
-                break
-            failed_this_pass: list[PlayerWindow] = []
-            for index, target in enumerate(pending_targets):
-                invitation = invitations_by_handle[target.window_handle]
-                command = str(invitation["command"])
-                send_started = time.monotonic()
-                execute_chat_command_on_window(
-                    leader_player.window_handle,
-                    command,
-                    submit=True,
-                    wait_timeout=(
-                        chat_timeout if attempt == 1 and index == 0 else 8.0
-                    ),
-                    poll_interval=0.35,
-                )
-                invitation_send_seconds += time.monotonic() - send_started
-                invitation["sent"] = True
-                invitation["attempts"] = attempt
-                print(
-                    f"  Invitation sent to {target.pseudo}"
-                    f" (attempt {attempt}/{len(attempt_timeouts)}).",
-                    flush=True,
-                )
-
-                accept_started = time.monotonic()
-                try:
-                    button = accept_group_invitation(
-                        target, ocr=ocr, timeout=accept_timeout
-                    )
-                except TimeoutError:
-                    invitation_accept_seconds += time.monotonic() - accept_started
-                    failed_this_pass.append(target)
-                    print(
-                        f"  Invitation not confirmed for {target.pseudo}; "
-                        "queued for reinvitation.",
-                        flush=True,
-                    )
-                    continue
-
-                invitation_accept_seconds += time.monotonic() - accept_started
-                invitation["accepted"] = True
-                invitation["accept_confidence"] = round(button.confidence, 5)
-                print(
-                    f"  {target.pseudo} accepted ({button.confidence:.0%}).",
-                    flush=True,
-                )
-
-            pending_targets = failed_this_pass
-            if pending_targets and attempt < len(attempt_timeouts):
-                missing_names = ", ".join(target.pseudo for target in pending_targets)
-                print(f"Reinviting missing character(s): {missing_names}.", flush=True)
-                time.sleep(0.75)
-
-        if pending_targets:
-            missing_names = ", ".join(target.pseudo for target in pending_targets)
-            raise TimeoutError(
-                "Group invitation could not be confirmed after "
-                f"{len(attempt_timeouts)} attempts for: {missing_names}."
-            )
-
-        timings["invitations_sent_seconds"] = round(invitation_send_seconds, 3)
-        timings["invitations_accepted_seconds"] = round(invitation_accept_seconds, 3)
-        timings["invitation_phase_total_seconds"] = round(
-            time.monotonic() - invite_phase_started, 3
-        )
-
-        # Always finish on the group leader after all invitations are confirmed
-        # and accepted.
-        activate_window(leader_player.window_handle)
-        print(
-            f"Returned to group leader {leader_player.pseudo}.",
-            flush=True,
-        )
+        timings.update(invitation_timings)
 
     timings["workflow_total_seconds"] = round(time.monotonic() - workflow_started, 3)
 
@@ -932,7 +1150,7 @@ def accept_saved_invitations(output_path: Path, timeout: float) -> int:
     if not output_path.is_file():
         raise RuntimeError(f"Player file was not found: {output_path}")
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    leader = str(payload.get("leader", "Silvcra"))
+    leader = str(payload.get("leader", ""))
     players = [PlayerWindow(**item) for item in payload.get("players", [])]
     targets = [player for player in players if player.pseudo.casefold() != leader.casefold()]
     if not targets:
@@ -966,11 +1184,15 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="read and validate without clicking")
     parser.add_argument("--initial-wait", type=float, default=0.0)
     parser.add_argument("--selection-timeout", type=float, default=120.0)
-    parser.add_argument("--leader", default="Silvcra", help="character that invites the group")
+    parser.add_argument(
+        "--leader",
+        default="",
+        help="character that invites the group (first detected character by default)",
+    )
     parser.add_argument("--skip-invites", action="store_true", help="do not send invitations")
     parser.add_argument("--chat-timeout", type=float, default=180.0)
     parser.add_argument("--invitation-timeout", type=float, default=60.0)
-    parser.add_argument("--post-login-delay", type=float, default=2.5)
+    parser.add_argument("--post-login-delay", type=float, default=0.35)
     parser.add_argument("--image", type=Path, help="test a screenshot without controlling Windows")
     parser.add_argument("--start-image", type=Path, help="test central PLAY on a screenshot")
     parser.add_argument("--invitation-image", type=Path, help="test ACCEPT on a screenshot")

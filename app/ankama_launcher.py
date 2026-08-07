@@ -185,11 +185,11 @@ def ensure_launcher_window(
 
     deadline = time.monotonic() + launch_timeout
     while time.monotonic() < deadline:
-        time.sleep(1.0)
         window = find_launcher_window()
         if window is not None:
             activate_window(window[0])
             return window
+        time.sleep(0.20)
     raise TimeoutError("Ankama Launcher did not expose a window before the timeout.")
 
 

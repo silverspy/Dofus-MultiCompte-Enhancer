@@ -3,15 +3,12 @@
 from PyInstaller.utils.hooks import collect_data_files
 
 
-# RapidOCR supports several optional inference backends. The application uses
-# its default ONNX Runtime backend only; collecting every RapidOCR submodule
-# also pulled unrelated PyTorch, pandas, openpyxl, and pytest modules into the
-# executable. Static imports cover the OCR pipeline while this explicit hidden
-# import keeps the dynamically selected ONNX engine available.
+# The installed edition uses the same application payload as the portable
+# edition, but COLLECT keeps it unpacked on disk for near-instant startup.
 rapidocr_datas = collect_data_files("rapidocr")
 rapidocr_hiddenimports = ["rapidocr.inference_engine.onnxruntime"]
 excluded_modules = [
-    "pandas",  # optional tqdm integration; not used by the application
+    "pandas",
     "pytest",
     "openpyxl",
     "rapidocr.inference_engine.mnn",
@@ -46,16 +43,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="Dofus-MultiCompte-Enhancer",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -63,4 +57,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=["app/assets/dofus-multicompteenhancer.ico"],
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="Dofus-MultiCompte-Enhancer",
 )

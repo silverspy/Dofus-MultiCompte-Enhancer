@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from PIL import Image
 
 import ankama_launcher
 import dofus_panel
+import panel_settings
 
 
 def test_default_configuration_contains_current_controls() -> None:
@@ -14,6 +16,17 @@ def test_default_configuration_contains_current_controls() -> None:
     assert dofus_panel.DEFAULT_CONFIG["play_button_enabled"] is True
     assert dofus_panel.DEFAULT_CONFIG["orientation"] in {"vertical", "horizontal"}
     assert 0.70 <= dofus_panel.DEFAULT_CONFIG["ui_scale"] <= 1.50
+    assert dofus_panel.DEFAULT_CONFIG["leader"] == ""
+
+
+def test_workflow_completion_marker_preserves_the_real_exit_code() -> None:
+    assert dofus_panel.parse_workflow_done_marker(
+        dofus_panel.workflow_done_marker(0)
+    ) == 0
+    assert dofus_panel.parse_workflow_done_marker(
+        dofus_panel.workflow_done_marker(7)
+    ) == 7
+    assert dofus_panel.parse_workflow_done_marker("regular workflow output") is None
 
 
 def test_ui_translation_supports_french_and_english() -> None:
@@ -26,6 +39,8 @@ def test_ui_translation_supports_french_and_english() -> None:
     assert dofus_panel.translate("unknown", "save") == "ENREGISTRER"
     assert dofus_panel.translate("fr", "update_now") == "METTRE À JOUR"
     assert dofus_panel.translate("en", "update_now") == "UPDATE NOW"
+    assert "prochain chargement" in dofus_panel.translate("fr", "group_leader_info")
+    assert "next load" in dofus_panel.translate("en", "group_leader_info")
     assert dofus_panel.translate("fr", "minimize_app") == "RÉDUIRE L’APPLICATION"
     assert dofus_panel.translate("en", "quit_app") == "QUIT APPLICATION"
 
@@ -63,6 +78,27 @@ def test_save_json_preserves_unicode(tmp_path: Path) -> None:
 
     assert json.loads(destination.read_text(encoding="utf-8")) == {"label": "Icônes"}
     assert "Icônes" in destination.read_text(encoding="utf-8")
+    assert not (tmp_path / ".config.json.tmp").exists()
+
+
+def test_panel_config_does_not_share_nested_default_state(tmp_path: Path) -> None:
+    first = panel_settings.load_panel_config(tmp_path / "missing.json")
+    second = panel_settings.load_panel_config(tmp_path / "missing.json")
+
+    first["classes"]["Silvcra"] = "Cra"
+
+    assert second["classes"] == {}
+    assert panel_settings.DEFAULT_CONFIG["classes"] == {}
+
+
+def test_panel_config_repairs_invalid_class_mapping(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"classes": null, "orientation": "horizontal"}', encoding="utf-8")
+
+    loaded = panel_settings.load_panel_config(config_path)
+
+    assert loaded["orientation"] == "horizontal"
+    assert loaded["classes"] == {}
 
 
 def test_player_cell_background_keeps_expected_dimensions() -> None:
@@ -70,6 +106,178 @@ def test_player_cell_background_keeps_expected_dimensions() -> None:
 
     assert isinstance(image, Image.Image)
     assert image.size == (36, 38)
+
+
+def test_dialog_origin_is_clamped_to_the_monitor_work_area() -> None:
+    work_area = (100, 50, 900, 650)
+
+    assert dofus_panel.clamp_window_origin(-20, -10, 318, 480, work_area) == (100, 50)
+    assert dofus_panel.clamp_window_origin(850, 600, 318, 480, work_area) == (582, 170)
+    assert dofus_panel.clamp_window_origin(250, 100, 318, 480, work_area) == (250, 100)
+
+
+def test_rounded_window_uses_antialiased_dwm_on_native_wrapper(monkeypatch) -> None:
+    region_calls: list[tuple[int, object, bool]] = []
+    dwm_calls: list[tuple[int, int, int]] = []
+
+    class Window:
+        def update_idletasks(self) -> None:
+            pass
+
+        def winfo_width(self) -> int:
+            return 40
+
+        def winfo_height(self) -> int:
+            return 180
+
+        def winfo_id(self) -> int:
+            return 101
+
+    monkeypatch.setattr(dofus_panel.user32, "GetParent", lambda hwnd: 202)
+    monkeypatch.setattr(
+        dofus_panel.user32,
+        "SetWindowRgn",
+        lambda hwnd, region, redraw: region_calls.append((hwnd, region, redraw)) or 1,
+    )
+    monkeypatch.setattr(
+        dofus_panel.dwmapi,
+        "DwmSetWindowAttribute",
+        lambda hwnd, attribute, _value, size: (
+            dwm_calls.append((hwnd, attribute, size)) or 0
+        ),
+    )
+
+    dofus_panel.apply_rounded_window(Window())
+
+    assert region_calls == [(202, None, True)]
+    assert dwm_calls == [(
+        202,
+        dofus_panel.DWMWA_WINDOW_CORNER_PREFERENCE,
+        ctypes.sizeof(ctypes.c_int),
+    )]
+
+
+def test_compact_control_executes_its_command_on_mouse_press() -> None:
+    calls: list[str] = []
+    button = object.__new__(dofus_panel.RoundedControlButton)
+    button.command = lambda: calls.append("pressed")
+
+    button._press()
+
+    assert calls == ["pressed"]
+
+
+def test_information_control_pins_on_mouse_press() -> None:
+    calls: list[str] = []
+    info = object.__new__(dofus_panel.DofusInfoTip)
+    info.toggle_pin = lambda: calls.append("pressed")
+
+    result = info._press()
+
+    assert result == "break"
+    assert calls == ["pressed"]
+
+
+def test_settings_hitbox_accepts_only_points_inside_the_control() -> None:
+    hitbox = (100, 200, 120, 220)
+
+    assert dofus_panel.point_in_rectangle((100, 200), hitbox) is True
+    assert dofus_panel.point_in_rectangle((119, 219), hitbox) is True
+    assert dofus_panel.point_in_rectangle((120, 219), hitbox) is False
+    assert dofus_panel.point_in_rectangle((119, 220), hitbox) is False
+    assert dofus_panel.point_in_rectangle((110, 210), None) is False
+
+
+def test_settings_dialog_is_placed_beside_its_owner_and_kept_on_screen() -> None:
+    work_area = (0, 0, 1920, 1040)
+
+    assert dofus_panel.position_dialog_near_rectangle(
+        (20, 800, 60, 1000), (318, 493), work_area
+    ) == (68, 547)
+    assert dofus_panel.position_dialog_near_rectangle(
+        (1880, 200, 1910, 400), (318, 493), work_area
+    ) == (1554, 200)
+
+
+def test_empty_player_list_displays_two_non_interactive_placeholders() -> None:
+    visible_players = dofus_panel.players_with_placeholders([])
+
+    assert len(visible_players) == 2
+    assert all(player.placeholder for player in visible_players)
+    assert all(player.handle is None for player in visible_players)
+
+
+def test_empty_profile_slot_cannot_be_treated_as_group_leader() -> None:
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.config_data = {"leader": ""}
+    placeholder = dofus_panel.Player("", 0, placeholder=True)
+
+    assert panel.is_leader(placeholder) is False
+
+
+def test_real_players_are_preserved_when_placeholder_slots_are_added() -> None:
+    player = dofus_panel.Player("Silvcra", 101, handle=101, class_name="Cra")
+
+    visible_players = dofus_panel.players_with_placeholders([player])
+
+    assert visible_players[0] is player
+    assert len(visible_players) == 2
+    assert visible_players[1].placeholder is True
+
+
+def test_saved_icon_order_is_applied_below_the_group_leader() -> None:
+    players = [
+        dofus_panel.Player("Second", 202),
+        dofus_panel.Player("Leader", 101),
+        dofus_panel.Player("Third", 303),
+    ]
+
+    ordered = dofus_panel.sort_players_for_panel(
+        players, ["Third", "Second", "Leader"], "Leader"
+    )
+
+    assert [player.pseudo for player in ordered] == ["Leader", "Third", "Second"]
+
+
+def test_drag_reorders_icons_but_keeps_the_group_leader_first() -> None:
+    leader = dofus_panel.Player("Leader", 101)
+    second = dofus_panel.Player("Second", 202)
+    third = dofus_panel.Player("Third", 303)
+    players = [leader, second, third]
+
+    assert dofus_panel.reorder_players(players, third, 1, "Leader") == [
+        leader, third, second,
+    ]
+    assert dofus_panel.reorder_players(players, leader, 2, "Leader") == players
+    assert dofus_panel.reorder_players(players, third, 0, "Leader") == [
+        leader, third, second,
+    ]
+
+
+def test_drag_preview_uses_the_requested_cell_size() -> None:
+    icon = Image.new("RGBA", (28, 28), (255, 255, 255, 255))
+
+    preview = dofus_panel.drag_preview_image(icon, width=42, height=46)
+
+    assert preview.mode == "RGBA"
+    assert preview.size == (42, 46)
+
+
+def test_placeholder_profile_uses_a_translucent_grayscale_dofus_icon() -> None:
+    image = dofus_panel.placeholder_dofus_icon_image()
+
+    assert image is not None
+    assert image.size == (28, 28)
+    assert image.mode == "RGBA"
+    opaque_pixels = [
+        image.getpixel((x, y))
+        for y in range(image.height)
+        for x in range(image.width)
+        if image.getpixel((x, y))[3] > 0
+    ]
+    assert opaque_pixels
+    assert all(red == green == blue for red, green, blue, _alpha in opaque_pixels)
+    assert max(alpha for _red, _green, _blue, alpha in opaque_pixels) < 255
 
 
 def test_leader_crown_keeps_transparent_background() -> None:
