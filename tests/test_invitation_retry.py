@@ -7,6 +7,44 @@ import numpy as np
 import dofus_character_login
 
 
+def test_late_invitation_is_accepted_without_duplicate_command(monkeypatch) -> None:
+    leader = dofus_character_login.PlayerWindow("Leader", 0.99, 101, "one", True)
+    target = dofus_character_login.PlayerWindow("Late", 0.99, 202, "two", True)
+    commands: list[str] = []
+    accept_attempts = 0
+
+    monkeypatch.setattr(
+        dofus_character_login,
+        "execute_chat_commands_on_window",
+        lambda _handle, batch, **_kwargs: commands.extend(batch),
+    )
+
+    def accept(_player, **_kwargs):
+        nonlocal accept_attempts
+        accept_attempts += 1
+        if accept_attempts == 1:
+            raise TimeoutError("invitation arrived just after the first probe")
+        return dofus_character_login.InvitationButton(10, 10, 0.95)
+
+    monkeypatch.setattr(dofus_character_login, "accept_group_invitation", accept)
+    monkeypatch.setattr(dofus_character_login.time, "sleep", lambda _seconds: None)
+
+    invitations, _send_seconds, _accept_seconds = (
+        dofus_character_login.invite_group_members(
+            leader,
+            [target],
+            ocr=object(),
+            chat_timeout=5.0,
+            invitation_timeout=10.0,
+        )
+    )
+
+    assert commands == ["/invite Late"]
+    assert accept_attempts == 2
+    assert invitations[0]["accepted"] is True
+    assert invitations[0]["attempts"] == 1
+
+
 def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
     players = {
         101: dofus_character_login.PlayerWindow("Leader", 0.99, 101, "one", True),
@@ -73,7 +111,7 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
         invitation_actions.append(("accept", player.pseudo))
         attempt = accept_attempts.get(player.pseudo, 0) + 1
         accept_attempts[player.pseudo] = attempt
-        if player.pseudo == "Late" and attempt == 1:
+        if player.pseudo == "Late" and attempt <= 2:
             raise TimeoutError("invitation was not received")
         return dofus_character_login.InvitationButton(10, 10, 0.95)
 
@@ -95,6 +133,7 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
         ("send", "/invite Late"),
         ("accept", "Ready"),
         ("accept", "Late"),
+        ("accept", "Late"),
         ("send", "/invite Late"),
         ("accept", "Late"),
     ]
@@ -108,7 +147,7 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
     ]
     assert captures[:4] == [101, 101, 202, 303]
     assert 0.35 in sleeps
-    assert accept_attempts == {"Ready": 1, "Late": 2}
+    assert accept_attempts == {"Ready": 1, "Late": 3}
     assert activations[-1] == 101
     payload = json.loads(output.read_text(encoding="utf-8"))
     invitations = {item["target"]: item for item in payload["invitations"]}

@@ -80,7 +80,8 @@ def test_chat_bar_rejects_dot_without_dark_input_background() -> None:
 
 def test_invitation_accept_button_is_detected_in_expected_panel() -> None:
     image = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    cv2.rectangle(image, (15, 145), (165, 225), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (5, 145), (165, 225), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (8, 184), (68, 197), (70, 70, 75), thickness=-1)
     cv2.rectangle(image, (70, 184), (130, 197), (30, 180, 130), thickness=-1)
 
     button = detect_invitation_accept_button(image)
@@ -92,7 +93,8 @@ def test_invitation_accept_button_is_detected_in_expected_panel() -> None:
 
 def test_invitation_accept_button_can_be_detected_anywhere() -> None:
     image = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    cv2.rectangle(image, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
 
     button = detect_invitation_accept_button(image)
@@ -102,9 +104,32 @@ def test_invitation_accept_button_can_be_detected_anywhere() -> None:
     assert 325 <= button.click_y <= 332
 
 
+def test_invitation_button_is_found_inside_bright_green_scenery() -> None:
+    # Outdoor maps create one large green outer contour around the dark panel.
+    image = np.full((600, 1000, 3), (45, 165, 105), dtype=np.uint8)
+    cv2.rectangle(image, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
+    cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
+
+    button = detect_invitation_accept_button(image)
+
+    assert button is not None
+    assert 735 <= button.click_x <= 745
+    assert 325 <= button.click_y <= 332
+
+
+def test_green_action_without_refuse_button_is_not_clicked() -> None:
+    image = np.full((600, 1000, 3), 170, dtype=np.uint8)
+    cv2.rectangle(image, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
+
+    assert detect_invitation_accept_button(image) is None
+
+
 def test_invitation_ocr_rejects_unrelated_green_action() -> None:
     image = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    cv2.rectangle(image, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(image, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
 
     assert (
@@ -115,10 +140,11 @@ def test_invitation_ocr_rejects_unrelated_green_action() -> None:
 
 def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> None:
     invitation = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    cv2.rectangle(invitation, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(invitation, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(invitation, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
     cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    captures = iter([invitation, cleared])
+    captures = iter([invitation, invitation, cleared, cleared])
     settle_delays: list[float] = []
     clicks: list[tuple[int, int]] = []
 
@@ -158,15 +184,16 @@ def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> N
 
     assert button.click_x in range(735, 746)
     assert clicks == [(10 + button.click_x, 20 + button.click_y)]
-    assert settle_delays == [0.08, 0.04]
+    assert settle_delays == [0.08, 0.02, 0.04, 0.04]
 
 
 def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> None:
     invitation = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    cv2.rectangle(invitation, (650, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(invitation, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
+    cv2.rectangle(invitation, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
     cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    captures = iter([invitation, invitation, cleared])
+    captures = iter([invitation, invitation, invitation, cleared, cleared])
     clicks: list[tuple[int, int]] = []
     sleeps: list[float] = []
 
@@ -197,7 +224,7 @@ def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> No
     button = accept_group_invitation(player, timeout=1.0)
 
     assert clicks == [(10 + button.click_x, 20 + button.click_y)]
-    assert sleeps == [0.20, 0.30]
+    assert sleeps == [0.08, 0.20, 0.20, 0.25]
 
 
 def test_account_count_is_inferred_after_window_set_stabilizes(monkeypatch) -> None:

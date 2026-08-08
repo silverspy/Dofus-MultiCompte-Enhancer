@@ -231,11 +231,20 @@ def detect_invitation_accept_button(
     mask = cv2.inRange(hsv, np.array([28, 70, 90]), np.array([78, 255, 255]))
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Connected components are intentional here. On bright outdoor maps the
+    # scenery can form one large outer contour surrounding the dark invitation
+    # panel. RETR_EXTERNAL then hides the green button as an island inside that
+    # contour, even though it is a separate foreground component.
+    component_count, _labels, component_stats, _centroids = (
+        cv2.connectedComponentsWithStats(mask)
+    )
 
     candidates: list[tuple[float, InvitationButton]] = []
-    for contour in contours:
-        x, y, candidate_width, candidate_height = cv2.boundingRect(contour)
+    for component_index in range(1, component_count):
+        x, y, candidate_width, candidate_height, _area = map(
+            int,
+            component_stats[component_index],
+        )
         relative_width = candidate_width / width
         relative_height = candidate_height / height
         aspect = candidate_width / max(1, candidate_height)
@@ -248,13 +257,32 @@ def detect_invitation_accept_button(
             continue
         # The button must belong to a dark invitation panel, regardless of where
         # that panel was moved by the user.
-        panel_x0 = max(0, x - candidate_width)
-        panel_x1 = min(width, x + candidate_width * 2)
-        panel_y0 = max(0, y - candidate_height * 5)
-        panel_y1 = min(height, y + candidate_height * 2)
+        panel_x0 = max(0, x - int(candidate_width * 1.15))
+        panel_x1 = min(width, x + int(candidate_width * 1.10))
+        panel_y0 = max(0, y - int(candidate_height * 3.40))
+        panel_y1 = min(height, y + candidate_height + 2)
         panel = image[panel_y0:panel_y1, panel_x0:panel_x1]
         dark_ratio = float(np.mean(panel.mean(axis=2) < 105)) if panel.size else 0.0
-        if dark_ratio < 0.35:
+        if dark_ratio < 0.55:
+            continue
+
+        # The ACCEPT button is the right-hand control of a two-button row. The
+        # neutral REFUSE button immediately to its left is a much stronger cue
+        # than green alone and prevents clicks on vegetation or action buttons.
+        sibling_gap = max(2, int(candidate_width * 0.05))
+        sibling_x1 = x - sibling_gap
+        sibling_x0 = max(0, sibling_x1 - candidate_width)
+        sibling = hsv[y:y + candidate_height, sibling_x0:sibling_x1]
+        if sibling.shape[:2] != (candidate_height, candidate_width):
+            continue
+        sibling_neutral_ratio = float(
+            np.mean(
+                (sibling[:, :, 1] < 90)
+                & (sibling[:, :, 2] > 55)
+                & (sibling[:, :, 2] < 175)
+            )
+        )
+        if sibling_neutral_ratio < 0.60:
             continue
 
         text_score = 0.0
@@ -287,12 +315,15 @@ def detect_invitation_accept_button(
         green_ratio = float(
             np.mean(mask[y:y + candidate_height, x:x + candidate_width] > 0)
         )
-        confidence = min(
-            1.0,
-            0.35 * dark_ratio
-            + 0.25 * shape_score
-            + 0.20 * min(1.0, green_ratio / 0.55)
-            + 0.20 * text_score,
+        confidence = float(
+            min(
+                1.0,
+                0.35 * dark_ratio
+                + 0.20 * sibling_neutral_ratio
+                + 0.20 * shape_score
+                + 0.15 * min(1.0, green_ratio / 0.55)
+                + 0.10 * text_score,
+            )
         )
         candidates.append(
             (confidence, InvitationButton(center_x, center_y, confidence))
@@ -337,21 +368,41 @@ def accept_group_invitation(
         image, _, _ = capture_window(hwnd, settle_delay=0.08)
         button = detect_invitation_accept_button(image)
         if button is not None:
-            detected_button = button
+            # Confirm the exact same control in a second frame before clicking.
+            # Animated scenery can briefly resemble a green action button; a
+            # real invitation stays at a stable client-relative position.
+            time.sleep(0.08)
+            stable_image, _, _ = capture_window(hwnd, settle_delay=0.02)
+            stable_button = detect_invitation_accept_button(stable_image)
+            stability_tolerance = max(6, int(stable_image.shape[1] * 0.006))
+            if (
+                stable_button is None
+                or abs(stable_button.click_x - button.click_x) > stability_tolerance
+                or abs(stable_button.click_y - button.click_y) > stability_tolerance
+            ):
+                time.sleep(max(0.05, poll_interval))
+                continue
+
+            detected_button = stable_button
             activate_window(hwnd)
             origin_x, origin_y, _, _ = get_client_geometry(hwnd)
-            click_screen(origin_x + button.click_x, origin_y + button.click_y)
+            click_screen(
+                origin_x + stable_button.click_x,
+                origin_y + stable_button.click_y,
+            )
 
-            # Never double-click while the invitation panel is animating out.
-            # Two spaced confirmations must still see the button before the
-            # outer polling loop is allowed to perform another single click.
-            remaining: InvitationButton | None = button
-            for confirmation_delay in (0.20, 0.30):
+            # Never treat one animation frame as confirmation. The panel must
+            # be absent in two consecutive captures before acceptance succeeds.
+            missing_confirmations = 0
+            for confirmation_delay in (0.20, 0.20, 0.25):
                 time.sleep(confirmation_delay)
                 verification, _, _ = capture_window(hwnd, settle_delay=0.04)
-                remaining = detect_invitation_accept_button(verification)
-                if remaining is None:
-                    return detected_button
+                if detect_invitation_accept_button(verification) is None:
+                    missing_confirmations += 1
+                    if missing_confirmations == 2:
+                        return detected_button
+                else:
+                    missing_confirmations = 0
             time.sleep(max(0.25, poll_interval))
             continue
         time.sleep(max(0.05, poll_interval))
@@ -732,6 +783,39 @@ def invite_group_members(
     for attempt, accept_timeout in enumerate(timeouts, start=1):
         if not pending_targets:
             break
+
+        # Before resending a command, give a late-arriving invitation one last
+        # short visual check. This avoids duplicate /invite commands when the
+        # panel appeared just after the previous probe ended.
+        if attempt > 1:
+            still_missing: list[PlayerWindow] = []
+            for target in pending_targets:
+                invitation = invitations_by_handle[target.window_handle]
+                accept_started = time.monotonic()
+                try:
+                    button = accept_group_invitation(
+                        target,
+                        ocr=ocr,
+                        timeout=min(1.25, accept_timeout),
+                        poll_interval=0.18,
+                    )
+                except TimeoutError:
+                    accept_seconds += time.monotonic() - accept_started
+                    still_missing.append(target)
+                    continue
+
+                accept_seconds += time.monotonic() - accept_started
+                invitation["accepted"] = True
+                invitation["accept_confidence"] = round(button.confidence, 5)
+                print(
+                    f"  Late invitation accepted for {target.pseudo}; "
+                    "reinvitation skipped.",
+                    flush=True,
+                )
+            pending_targets = still_missing
+            if not pending_targets:
+                break
+
         commands = [
             str(invitations_by_handle[target.window_handle]["command"])
             for target in pending_targets
