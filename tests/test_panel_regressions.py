@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -157,14 +158,35 @@ def test_rounded_window_uses_antialiased_dwm_on_native_wrapper(monkeypatch) -> N
     )]
 
 
-def test_compact_control_executes_its_command_on_mouse_press() -> None:
+def test_compact_control_executes_only_on_mouse_release() -> None:
     calls: list[str] = []
     button = object.__new__(dofus_panel.RoundedControlButton)
     button.command = lambda: calls.append("pressed")
+    button.press_origin = None
+    button.press_cancelled = False
+    event = SimpleNamespace(x_root=100, y_root=200)
 
-    button._press()
+    button._press(event)
+
+    assert calls == []
+
+    button._release(event)
 
     assert calls == ["pressed"]
+
+
+def test_compact_control_release_is_cancelled_after_dragging() -> None:
+    calls: list[str] = []
+    button = object.__new__(dofus_panel.RoundedControlButton)
+    button.command = lambda: calls.append("pressed")
+    button.press_origin = None
+    button.press_cancelled = False
+
+    button._press(SimpleNamespace(x_root=100, y_root=200))
+    button._motion(SimpleNamespace(x_root=105, y_root=200))
+    button._release(SimpleNamespace(x_root=105, y_root=200))
+
+    assert calls == []
 
 
 def test_information_control_pins_on_mouse_press() -> None:

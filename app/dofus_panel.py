@@ -50,6 +50,7 @@ APP_ICON_PATH = ASSETS_DIR / "dofus-multicompteenhancer.ico"
 PANEL_DIAGNOSTICS_PATH = DATA_DIR / "panel-diagnostics.log"
 MINIMUM_VISIBLE_PROFILES = 2
 WORKFLOW_DONE_PREFIX = "__WORKFLOW_DONE__:"
+CLICK_DRAG_THRESHOLD = 4
 
 
 def workflow_done_marker(exit_code: int) -> str:
@@ -1017,17 +1018,37 @@ class RoundedControlButton(tk.Button):
         self.outline = outline
         self.background_ref: ImageTk.PhotoImage | None = None
         self.render_signature: tuple[int, int, str] | None = None
+        self.press_origin: tuple[int, int] | None = None
+        self.press_cancelled = False
         self.bind("<Configure>", lambda _event: self.render(self.fill))
         self.bind("<Enter>", lambda _event: self.render(self.hover_fill))
         self.bind("<Leave>", lambda _event: self.render(self.fill))
-        # Trigger compact controls on press.  On a tiny borderless panel the
-        # release can be delivered to another widget after a one-pixel move or
-        # a focus change, which previously made the settings button appear
-        # unresponsive.
         self.bind("<ButtonPress-1>", self._press)
+        self.bind("<B1-Motion>", self._motion)
+        self.bind("<ButtonRelease-1>", self._release)
 
-    def _press(self, _event: tk.Event | None = None) -> None:
-        if self.command is not None:
+    def _press(self, event: tk.Event) -> None:
+        self.press_origin = (int(event.x_root), int(event.y_root))
+        self.press_cancelled = False
+
+    def _motion(self, event: tk.Event) -> None:
+        if self.press_origin is None:
+            return
+        distance = max(
+            abs(int(event.x_root) - self.press_origin[0]),
+            abs(int(event.y_root) - self.press_origin[1]),
+        )
+        if distance >= CLICK_DRAG_THRESHOLD:
+            self.press_cancelled = True
+
+    def _release(self, event: tk.Event) -> None:
+        if self.press_origin is None:
+            return
+        self._motion(event)
+        should_execute = not self.press_cancelled
+        self.press_origin = None
+        self.press_cancelled = False
+        if should_execute and self.command is not None:
             self.command()
 
     def render(self, fill: str) -> None:
@@ -1904,8 +1925,8 @@ class DofusPanel:
         self.dragging = False
         if isinstance(
             event.widget,
-            (tk.Button, ttk.Combobox, tk.Scale, RoundedControlButton,
-             RoundedSettingsButton, tk.Checkbutton),
+            (tk.Button, ttk.Combobox, tk.Scale, RoundedSettingsButton,
+             tk.Checkbutton),
         ):
             return
         widget: tk.Misc | None = event.widget
@@ -1929,7 +1950,7 @@ class DofusPanel:
                 abs(event.x_root - self.drag_start[0]),
                 abs(event.y_root - self.drag_start[1]),
             )
-            if distance < 4:
+            if distance < CLICK_DRAG_THRESHOLD:
                 return
             self.dragging = True
         x = event.x_root - self.drag_origin[0]
@@ -2860,6 +2881,9 @@ class DofusPanel:
             held_keys: set[int] = set()
             mouse_button_state = 0
             last_mouse_move_at = 0.0
+            settings_press_origin: tuple[int, int] | None = None
+            settings_press_hitbox: tuple[int, int, int, int] | None = None
+            settings_press_moved = False
 
             def emit_input(name: str) -> None:
                 self.hotkey_events.put(("input", (name, time.monotonic())))
@@ -2903,6 +2927,8 @@ class DofusPanel:
                 code: int, message: wintypes.WPARAM, data_pointer: wintypes.LPARAM
             ) -> int:
                 nonlocal mouse_button_state, last_mouse_move_at
+                nonlocal settings_press_origin, settings_press_hitbox
+                nonlocal settings_press_moved
                 try:
                     if code == HC_ACTION:
                         message_id = int(message)
@@ -2914,26 +2940,44 @@ class DofusPanel:
                             return int(
                                 user32.CallNextHookEx(None, code, message, data_pointer)
                             )
+                        point = (int(data.pt.x), int(data.pt.y))
                         if message_id == WM_LBUTTONDOWN:
                             mouse_button_state |= MK_LBUTTON
                             input_name = "SOURIS GAUCHE"
                             emit_input(input_name)
-                            if point_in_rectangle(
-                                (int(data.pt.x), int(data.pt.y)),
-                                self.settings_hitbox,
+                            if point_in_rectangle(point, self.settings_hitbox):
+                                settings_press_origin = point
+                                settings_press_hitbox = self.settings_hitbox
+                                settings_press_moved = False
+                            else:
+                                settings_press_origin = None
+                                settings_press_hitbox = None
+                                settings_press_moved = False
+                        elif message_id == WM_LBUTTONUP:
+                            if (
+                                settings_press_origin is not None
+                                and not settings_press_moved
+                                and point_in_rectangle(point, settings_press_hitbox)
                             ):
                                 self.hotkey_events.put(
                                     (
                                         "open_settings",
-                                        (
-                                            (int(data.pt.x), int(data.pt.y)),
-                                            self.settings_hitbox,
-                                        ),
+                                        (point, settings_press_hitbox),
                                     )
                                 )
-                        elif message_id == WM_LBUTTONUP:
+                            settings_press_origin = None
+                            settings_press_hitbox = None
+                            settings_press_moved = False
                             mouse_button_state &= ~MK_LBUTTON
                             input_name = "SOURIS GAUCHE"
+                        elif message_id == WM_MOUSEMOVE:
+                            if settings_press_origin is not None:
+                                distance = max(
+                                    abs(point[0] - settings_press_origin[0]),
+                                    abs(point[1] - settings_press_origin[1]),
+                                )
+                                if distance >= CLICK_DRAG_THRESHOLD:
+                                    settings_press_moved = True
                         elif message_id == WM_RBUTTONDOWN:
                             mouse_button_state |= MK_RBUTTON
                             input_name = "SOURIS DROITE"
