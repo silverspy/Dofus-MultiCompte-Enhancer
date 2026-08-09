@@ -166,6 +166,36 @@ def test_dialog_origin_is_clamped_to_the_monitor_work_area() -> None:
     assert dofus_panel.clamp_window_origin(250, 100, 318, 480, work_area) == (250, 100)
 
 
+def test_taskbar_refresh_preserves_exact_panel_geometry(monkeypatch) -> None:
+    geometry_calls: list[str] = []
+
+    class Root:
+        def update_idletasks(self) -> None:
+            pass
+
+        def geometry(self, value: str | None = None) -> str:
+            if value is not None:
+                geometry_calls.append(value)
+            return "42x196+1730+420"
+
+        def attributes(self, name: str, value=None):
+            if value is None:
+                return 0.91
+            return None
+
+        def after_idle(self, _callback) -> None:
+            pass
+
+    monkeypatch.setattr(dofus_panel, "native_toplevel_handle", lambda _root: 101)
+    monkeypatch.setattr(dofus_panel.user32, "GetWindowLongW", lambda *_args: 0)
+    monkeypatch.setattr(dofus_panel.user32, "SetWindowLongW", lambda *_args: 0)
+    monkeypatch.setattr(dofus_panel.user32, "ShowWindow", lambda *_args: 1)
+
+    dofus_panel.expose_root_in_taskbar(Root())
+
+    assert geometry_calls == ["42x196+1730+420"]
+
+
 def test_rounded_window_uses_antialiased_dwm_on_native_wrapper(monkeypatch) -> None:
     region_calls: list[tuple[int, object, bool]] = []
     dwm_calls: list[tuple[int, int, int]] = []

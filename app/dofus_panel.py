@@ -730,8 +730,9 @@ def configure_settings_style(dialog: tk.Toplevel) -> None:
 
 
 def expose_root_in_taskbar(root: tk.Tk) -> None:
-    """Keep the window borderless while creating a taskbar button."""
+    """Create a taskbar button without letting Explorer move the panel."""
     root.update_idletasks()
+    geometry = root.geometry()
     alpha = float(root.attributes("-alpha"))
     native_handle = native_toplevel_handle(root)
     style = int(user32.GetWindowLongW(native_handle, GWL_EXSTYLE))
@@ -742,6 +743,10 @@ def expose_root_in_taskbar(root: tk.Tk) -> None:
     # without restoring the Windows title bar.
     user32.ShowWindow(native_handle, SW_HIDE)
     user32.ShowWindow(native_handle, SW_SHOW)
+    # ShowWindow can ask Windows to apply a default placement, especially when
+    # a fullscreen client owns the foreground. Restore Tk's exact dimensions
+    # and origin before the next frame is drawn.
+    root.geometry(geometry)
     root.attributes("-topmost", True)
     root.attributes("-alpha", alpha)
     # Explorer's hide/show refresh can briefly redraw Tk's native wrapper.
@@ -3273,7 +3278,11 @@ class DofusPanel:
         """Restore the panel and its taskbar presence from the tray menu."""
         if self.closing:
             return
+        remembered_x = int(self.config_data.get("x", self.root.winfo_x()))
+        remembered_y = int(self.config_data.get("y", self.root.winfo_y()))
+        self.root.geometry(f"+{remembered_x}+{remembered_y}")
         self.root.deiconify()
+        self.root.geometry(f"+{remembered_x}+{remembered_y}")
         self.root.lift()
         self.root.attributes("-topmost", True)
         self.root.after_idle(self.refresh_settings_hitbox)
