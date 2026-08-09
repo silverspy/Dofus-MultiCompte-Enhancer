@@ -29,6 +29,116 @@ def test_update_asset_matches_distribution_mode() -> None:
     assert updater.select_update_asset(release, installed=False).name == updater.PORTABLE_ASSET
 
 
+def test_distribution_mode_recognizes_installer_and_onedir_layouts(tmp_path: Path) -> None:
+    portable_directory = tmp_path / "portable"
+    portable_directory.mkdir()
+    portable_executable = portable_directory / "app.exe"
+    portable_executable.touch()
+
+    installed_directory = tmp_path / "installed"
+    installed_directory.mkdir()
+    installed_executable = installed_directory / "app.exe"
+    installed_executable.touch()
+    (installed_directory / "unins000.exe").touch()
+
+    onedir_directory = tmp_path / "onedir"
+    onedir_directory.mkdir()
+    onedir_executable = onedir_directory / "app.exe"
+    onedir_executable.touch()
+    (onedir_directory / "_internal").mkdir()
+
+    assert updater.is_installed(portable_executable) is False
+    assert updater.is_installed(installed_executable) is True
+    assert updater.is_installed(onedir_executable) is True
+
+
+def test_update_environment_removes_inherited_pyinstaller_state() -> None:
+    environment = {
+        "PATH": "C:/Windows",
+        "__PYI_APPLICATION_HOME_DIR": "old-bundle",
+        "_PYI_ARCHIVE_FILE": "old.exe",
+        "_PYI_PARENT_PROCESS_LEVEL": "1",
+        "_MEIPASS2": "legacy-bundle",
+        "PYINSTALLER_RESET_ENVIRONMENT": "0",
+    }
+
+    cleaned = updater.update_subprocess_environment(environment)
+
+    assert cleaned == {
+        "PATH": "C:/Windows",
+        "PYINSTALLER_RESET_ENVIRONMENT": "1",
+    }
+
+
+def test_installed_update_launches_setup_with_clean_environment(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "installed" / "app.exe"
+    executable.parent.mkdir()
+    executable.touch()
+    (executable.parent / "_internal").mkdir()
+    setup = tmp_path / updater.SETUP_ASSET
+    setup.touch()
+    launches: list[tuple[list[str], dict[str, object]]] = []
+
+    monkeypatch.setattr(updater.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(updater, "download_asset", lambda _asset, _destination: setup)
+    monkeypatch.setattr(
+        updater.subprocess,
+        "Popen",
+        lambda command, **kwargs: launches.append((command, kwargs)),
+    )
+    monkeypatch.setattr(
+        updater.os,
+        "environ",
+        {"PATH": "C:/Windows", "__PYI_APPLICATION_HOME_DIR": "stale"},
+    )
+
+    updater.launch_update(release_with_assets(), executable=executable)
+
+    command, options = launches[0]
+    assert command[0] == str(setup)
+    assert options["env"] == {
+        "PATH": "C:/Windows",
+        "PYINSTALLER_RESET_ENVIRONMENT": "1",
+    }
+
+
+def test_portable_update_launches_powershell_with_clean_environment(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "portable" / "app.exe"
+    executable.parent.mkdir()
+    executable.touch()
+    package = tmp_path / updater.PORTABLE_ASSET
+    package.touch()
+    launches: list[tuple[list[str], dict[str, object]]] = []
+
+    monkeypatch.setattr(updater.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(updater, "download_asset", lambda _asset, _destination: package)
+    monkeypatch.setattr(
+        updater.subprocess,
+        "Popen",
+        lambda command, **kwargs: launches.append((command, kwargs)),
+    )
+    monkeypatch.setattr(
+        updater.os,
+        "environ",
+        {"PATH": "C:/Windows", "_PYI_PARENT_PROCESS_LEVEL": "1"},
+    )
+
+    updater.launch_update(release_with_assets(), executable=executable)
+
+    command, options = launches[0]
+    assert command[0] == "powershell.exe"
+    assert options["env"] == {
+        "PATH": "C:/Windows",
+        "PYINSTALLER_RESET_ENVIRONMENT": "1",
+    }
+
+
 def test_portable_update_replaces_the_executable_without_an_archive(tmp_path: Path) -> None:
     script_path = tmp_path / "portable-update.ps1"
 

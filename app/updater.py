@@ -82,7 +82,31 @@ def is_newer_release(current_version: str, release: ReleaseInfo) -> bool:
 
 def is_installed(executable: Path | None = None) -> bool:
     target = executable or Path(sys.executable)
-    return (target.resolve().parent / "unins000.exe").is_file()
+    application_directory = target.resolve().parent
+    return (
+        (application_directory / "unins000.exe").is_file()
+        or (application_directory / "_internal").is_dir()
+    )
+
+
+def update_subprocess_environment(
+    environment: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Return an environment safe for starting another frozen application.
+
+    PyInstaller's private variables describe the currently running bundle. If
+    PowerShell or Inno Setup inherits them and then starts the new executable,
+    its bootloader can mistake itself for a child of the old bundle.
+    """
+    source = os.environ if environment is None else environment
+    cleaned = {
+        key: value
+        for key, value in source.items()
+        if not key.lstrip("_").upper().startswith("PYI_")
+        and key.upper() != "_MEIPASS2"
+    }
+    cleaned["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return cleaned
 
 
 def select_update_asset(
@@ -152,6 +176,7 @@ def launch_update(
     current_executable = (executable or Path(sys.executable)).resolve()
     installed = is_installed(current_executable)
     asset = select_update_asset(release, installed=installed)
+    child_environment = update_subprocess_environment()
     update_directory = Path(tempfile.gettempdir()) / "DofusMultiCompteEnhancer"
     update_directory.mkdir(parents=True, exist_ok=True)
     package = download_asset(asset, update_directory / asset.name)
@@ -167,6 +192,7 @@ def launch_update(
                 "/RESTARTAPPLICATIONS",
             ],
             close_fds=True,
+            env=child_environment,
         )
         return
 
@@ -195,4 +221,5 @@ def launch_update(
         startupinfo=startup_info,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         close_fds=True,
+        env=child_environment,
     )
