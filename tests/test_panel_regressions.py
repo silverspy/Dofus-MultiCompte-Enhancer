@@ -30,6 +30,53 @@ def test_workflow_completion_marker_preserves_the_real_exit_code() -> None:
     assert dofus_panel.parse_workflow_done_marker("regular workflow output") is None
 
 
+def test_emergency_stop_requires_ctrl_q() -> None:
+    assert dofus_panel.is_emergency_stop_hotkey(0x51, {0xA2}) is True
+    assert dofus_panel.is_emergency_stop_hotkey(0x51, set()) is False
+    assert dofus_panel.is_emergency_stop_hotkey(0x50, {0xA2}) is False
+
+
+def test_workflow_status_keeps_stop_hint_visible() -> None:
+    panel = object.__new__(dofus_panel.DofusPanel)
+    calls: list[tuple[str, str, bool]] = []
+    panel.t = lambda key, **_kwargs: "CTRL+Q · STOP" if key == "stop_hint" else key
+    panel.set_status = lambda text, color, persistent=False: calls.append(
+        (text, color, persistent)
+    )
+
+    panel.set_workflow_status("RUNNING", dofus_panel.GOLD)
+
+    assert calls == [("RUNNING\nCTRL+Q · STOP", dofus_panel.GOLD, True)]
+
+
+def test_stop_workflow_terminates_only_an_active_process(monkeypatch) -> None:
+    class Process:
+        pid = 42
+
+        def __init__(self) -> None:
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+    process = Process()
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.workflow = process
+    panel.workflow_cancel_requested = False
+    panel.t = lambda key, **_kwargs: key
+    statuses: list[tuple[str, str]] = []
+    panel.set_workflow_status = lambda text, color: statuses.append((text, color))
+    monkeypatch.setattr(dofus_panel, "append_panel_diagnostic", lambda *_args, **_kwargs: None)
+
+    assert panel.stop_workflow() is True
+    assert process.terminated is True
+    assert panel.workflow_cancel_requested is True
+    assert statuses == [("stopping", dofus_panel.GOLD)]
+
+
 def test_ui_translation_supports_french_and_english() -> None:
     assert dofus_panel.translate("fr", "settings") == "PARAMÈTRES"
     assert dofus_panel.translate("en", "settings") == "SETTINGS"
@@ -37,6 +84,8 @@ def test_ui_translation_supports_french_and_english() -> None:
         dofus_panel.translate("en", "replication_targets", count=3)
         == "REPLICATION ENABLED · 3 TARGETS"
     )
+    assert dofus_panel.translate("fr", "stop_hint") == "CTRL+Q · ARRÊTER"
+    assert dofus_panel.translate("en", "cancelled") == "ACTION STOPPED"
     assert dofus_panel.translate("unknown", "save") == "ENREGISTRER"
     assert dofus_panel.translate("fr", "update_now") == "METTRE À JOUR"
     assert dofus_panel.translate("en", "update_now") == "UPDATE NOW"
@@ -115,6 +164,36 @@ def test_dialog_origin_is_clamped_to_the_monitor_work_area() -> None:
     assert dofus_panel.clamp_window_origin(-20, -10, 318, 480, work_area) == (100, 50)
     assert dofus_panel.clamp_window_origin(850, 600, 318, 480, work_area) == (582, 170)
     assert dofus_panel.clamp_window_origin(250, 100, 318, 480, work_area) == (250, 100)
+
+
+def test_taskbar_refresh_preserves_exact_panel_geometry(monkeypatch) -> None:
+    geometry_calls: list[str] = []
+
+    class Root:
+        def update_idletasks(self) -> None:
+            pass
+
+        def geometry(self, value: str | None = None) -> str:
+            if value is not None:
+                geometry_calls.append(value)
+            return "42x196+1730+420"
+
+        def attributes(self, name: str, value=None):
+            if value is None:
+                return 0.91
+            return None
+
+        def after_idle(self, _callback) -> None:
+            pass
+
+    monkeypatch.setattr(dofus_panel, "native_toplevel_handle", lambda _root: 101)
+    monkeypatch.setattr(dofus_panel.user32, "GetWindowLongW", lambda *_args: 0)
+    monkeypatch.setattr(dofus_panel.user32, "SetWindowLongW", lambda *_args: 0)
+    monkeypatch.setattr(dofus_panel.user32, "ShowWindow", lambda *_args: 1)
+
+    dofus_panel.expose_root_in_taskbar(Root())
+
+    assert geometry_calls == ["42x196+1730+420"]
 
 
 def test_rounded_window_uses_antialiased_dwm_on_native_wrapper(monkeypatch) -> None:

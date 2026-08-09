@@ -67,6 +67,11 @@ def parse_workflow_done_marker(message: str) -> int | None:
     except ValueError:
         return None
 
+
+def is_emergency_stop_hotkey(vk_code: int, held_keys: set[int]) -> bool:
+    """Return whether the current key press is Ctrl+Q."""
+    return vk_code == EMERGENCY_STOP_KEY and bool(CONTROL_KEYS & held_keys)
+
 # Uniform blue-black background inspired by small Dofus panels.
 DOFUS_NAVY = "#313445"
 BG = DOFUS_NAVY
@@ -144,6 +149,8 @@ MODIFIER_KEYS = (
     0x5B, 0x5C,  # left/right Windows
     0x10, 0x11, 0x12,  # generic variants
 )
+CONTROL_KEYS = frozenset((0x11, 0xA2, 0xA3))
+EMERGENCY_STOP_KEY = 0x51  # Q
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
@@ -723,8 +730,9 @@ def configure_settings_style(dialog: tk.Toplevel) -> None:
 
 
 def expose_root_in_taskbar(root: tk.Tk) -> None:
-    """Keep the window borderless while creating a taskbar button."""
+    """Create a taskbar button without letting Explorer move the panel."""
     root.update_idletasks()
+    geometry = root.geometry()
     alpha = float(root.attributes("-alpha"))
     native_handle = native_toplevel_handle(root)
     style = int(user32.GetWindowLongW(native_handle, GWL_EXSTYLE))
@@ -735,6 +743,10 @@ def expose_root_in_taskbar(root: tk.Tk) -> None:
     # without restoring the Windows title bar.
     user32.ShowWindow(native_handle, SW_HIDE)
     user32.ShowWindow(native_handle, SW_SHOW)
+    # ShowWindow can ask Windows to apply a default placement, especially when
+    # a fullscreen client owns the foreground. Restore Tk's exact dimensions
+    # and origin before the next frame is drawn.
+    root.geometry(geometry)
     root.attributes("-topmost", True)
     root.attributes("-alpha", alpha)
     # Explorer's hide/show refresh can briefly redraw Tk's native wrapper.
@@ -1643,6 +1655,7 @@ class DofusPanel:
         self.broadcast_replay_active = threading.Event()
         self.broadcast_thread: threading.Thread | None = None
         self.workflow: subprocess.Popen[str] | None = None
+        self.workflow_cancel_requested = False
         self.output_queue: queue.Queue[str] = queue.Queue()
         self.update_events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.drag_origin = (0, 0)
@@ -2527,7 +2540,13 @@ class DofusPanel:
         except queue.Empty:
             pass
 
-    def set_status(self, text: str, color: str = MUTED) -> None:
+    def set_status(
+        self,
+        text: str,
+        color: str = MUTED,
+        *,
+        persistent: bool = False,
+    ) -> None:
         if self.status_popup is None or not self.status_popup.winfo_exists():
             self.status_popup = tk.Toplevel(self.root)
             self.status_popup.overrideredirect(True)
@@ -2538,7 +2557,7 @@ class DofusPanel:
                 font=("Segoe UI Semibold", 7), relief="solid", bd=1,
             )
             self.status_text.pack()
-        self.status_text.configure(text=text[:42].upper(), fg=color)
+        self.status_text.configure(text=text[:72].upper(), fg=color)
         self.status_popup.update_idletasks()
         x = self.root.winfo_x() + self.root.winfo_width() + 5
         y = self.root.winfo_y() + 6
@@ -2546,13 +2565,23 @@ class DofusPanel:
         self.status_popup.deiconify()
         if self.status_after_id:
             self.root.after_cancel(self.status_after_id)
-        self.status_after_id = self.root.after(2400, self.status_popup.withdraw)
+            self.status_after_id = None
+        if not persistent:
+            self.status_after_id = self.root.after(2400, self.status_popup.withdraw)
+
+    def set_workflow_status(self, text: str, color: str = MUTED) -> None:
+        self.set_status(
+            f"{text[:48]}\n{self.t('stop_hint')}",
+            color,
+            persistent=True,
+        )
 
     def run_workflow(self) -> None:
         if self.workflow is not None and self.workflow.poll() is None:
-            self.set_status(self.t("action_running"), GOLD)
+            self.set_workflow_status(self.t("action_running"), GOLD)
             return
-        self.set_status(self.t("starting"), GOLD)
+        self.workflow_cancel_requested = False
+        self.set_workflow_status(self.t("starting"), GOLD)
         workflow_arguments = [
             "--output", str(PLAYERS_PATH),
             "--assets-dir", str(ASSETS_DIR),
@@ -2585,6 +2614,24 @@ class DofusPanel:
             self.output_queue.put(workflow_done_marker(process.wait()))
 
         threading.Thread(target=read_output, daemon=True).start()
+
+    def stop_workflow(self) -> bool:
+        """Stop the active automation child process without closing the panel."""
+        process = self.workflow
+        if process is None or process.poll() is not None:
+            return False
+        self.workflow_cancel_requested = True
+        append_panel_diagnostic("workflow_cancel_requested", pid=process.pid)
+        self.set_workflow_status(self.t("stopping"), GOLD)
+        try:
+            process.terminate()
+        except OSError as error:
+            append_panel_diagnostic(
+                "workflow_cancel_error",
+                error=f"{type(error).__name__}: {error}",
+            )
+            return False
+        return True
 
     def open_settings(self) -> None:
         dialog_width = 318
@@ -2879,6 +2926,7 @@ class DofusPanel:
         def worker() -> None:
             self.hotkey_thread_id = int(kernel32.GetCurrentThreadId())
             held_keys: set[int] = set()
+            suppressed_keys: set[int] = set()
             mouse_button_state = 0
             last_mouse_move_at = 0.0
             settings_press_origin: tuple[int, int] | None = None
@@ -2908,16 +2956,26 @@ class DofusPanel:
                             modifier for modifier in MODIFIER_KEYS
                             if modifier in held_keys and modifier != vk_code
                         )
-                        self.mirror_keyboard_event(
-                            name, vk_code, int(data.scanCode), int(data.flags), message_id,
-                            active_modifiers,
+                        emergency_stop = (
+                            message_id in (WM_KEYDOWN, WM_SYSKEYDOWN)
+                            and is_emergency_stop_hotkey(vk_code, held_keys)
                         )
+                        if emergency_stop:
+                            suppressed_keys.add(vk_code)
+                            self.hotkey_events.put(("stop_workflow", None))
+                        if vk_code not in suppressed_keys:
+                            self.mirror_keyboard_event(
+                                name, vk_code, int(data.scanCode), int(data.flags),
+                                message_id, active_modifiers,
+                            )
                         if message_id in (WM_KEYDOWN, WM_SYSKEYDOWN):
                             if vk_code not in held_keys:
                                 held_keys.add(vk_code)
-                                emit_input(name)
+                                if not emergency_stop:
+                                    emit_input(name)
                         elif message_id in (WM_KEYUP, WM_SYSKEYUP):
                             held_keys.discard(vk_code)
+                            suppressed_keys.discard(vk_code)
                 except Exception:
                     pass
                 return int(user32.CallNextHookEx(None, code, message, data_pointer))
@@ -3071,7 +3129,9 @@ class DofusPanel:
         try:
             while True:
                 event, payload = self.hotkey_events.get_nowait()
-                if event == "open_settings":
+                if event == "stop_workflow":
+                    self.stop_workflow()
+                elif event == "open_settings":
                     point, hitbox = payload if payload else (None, None)
                     append_panel_diagnostic(
                         "settings_hook_hit", point=point, hitbox=hitbox,
@@ -3135,13 +3195,19 @@ class DofusPanel:
                 line = self.output_queue.get_nowait()
                 exit_code = parse_workflow_done_marker(line)
                 if exit_code is not None:
-                    self.set_status(
-                        self.t("done") if exit_code == 0 else self.t("error"),
-                        LIME if exit_code == 0 else RED,
-                    )
+                    cancelled = self.workflow_cancel_requested
+                    self.workflow_cancel_requested = False
+                    self.workflow = None
+                    if cancelled:
+                        self.set_status(self.t("cancelled"), GOLD)
+                    else:
+                        self.set_status(
+                            self.t("done") if exit_code == 0 else self.t("error"),
+                            LIME if exit_code == 0 else RED,
+                        )
                     self.build()
                 elif line:
-                    self.set_status(line)
+                    self.set_workflow_status(line)
         except queue.Empty:
             pass
 
@@ -3212,7 +3278,11 @@ class DofusPanel:
         """Restore the panel and its taskbar presence from the tray menu."""
         if self.closing:
             return
+        remembered_x = int(self.config_data.get("x", self.root.winfo_x()))
+        remembered_y = int(self.config_data.get("y", self.root.winfo_y()))
+        self.root.geometry(f"+{remembered_x}+{remembered_y}")
         self.root.deiconify()
+        self.root.geometry(f"+{remembered_x}+{remembered_y}")
         self.root.lift()
         self.root.attributes("-topmost", True)
         self.root.after_idle(self.refresh_settings_hitbox)
