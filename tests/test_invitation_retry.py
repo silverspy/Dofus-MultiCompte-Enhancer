@@ -18,6 +18,11 @@ def test_late_invitation_is_accepted_without_duplicate_command(monkeypatch) -> N
         "execute_chat_commands_on_window",
         lambda _handle, batch, **_kwargs: commands.extend(batch),
     )
+    monkeypatch.setattr(
+        dofus_character_login,
+        "group_roster_is_complete",
+        lambda *_args: False,
+    )
 
     def accept(_player, **_kwargs):
         nonlocal accept_attempts
@@ -117,6 +122,11 @@ def test_only_missing_character_is_reinvited(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(dofus_character_login, "accept_group_invitation", accept)
     monkeypatch.setattr(dofus_character_login, "activate_window", activations.append)
+    monkeypatch.setattr(
+        dofus_character_login,
+        "group_roster_is_complete",
+        lambda *_args: False,
+    )
     monkeypatch.setattr(dofus_character_login.time, "sleep", sleeps.append)
 
     output = tmp_path / "players.json"
@@ -172,8 +182,42 @@ def test_missing_configured_leader_falls_back_to_first_player() -> None:
 
 
 def test_invitation_timeouts_keep_fast_probes_and_safe_final_wait() -> None:
-    assert dofus_character_login.invitation_attempt_timeouts(60.0) == (3.0, 7.0, 60.0)
-    assert dofus_character_login.invitation_attempt_timeouts(2.0) == (3.0, 7.0, 10.0)
+    assert dofus_character_login.invitation_attempt_timeouts(60.0) == (3.0, 7.0)
+    assert dofus_character_login.invitation_attempt_timeouts(2.0) == (3.0, 3.0)
+
+
+def test_complete_existing_group_skips_all_invitation_commands(monkeypatch) -> None:
+    leader = dofus_character_login.PlayerWindow("Leader", 0.99, 101, "one", True)
+    targets = [
+        dofus_character_login.PlayerWindow("Two", 0.99, 202, "two", True),
+        dofus_character_login.PlayerWindow("Three", 0.99, 303, "three", True),
+    ]
+    commands: list[str] = []
+    monkeypatch.setattr(
+        dofus_character_login,
+        "group_roster_is_complete",
+        lambda _leader, expected_count: expected_count == 3,
+    )
+    monkeypatch.setattr(
+        dofus_character_login,
+        "execute_chat_commands_on_window",
+        lambda _handle, batch, **_kwargs: commands.extend(batch),
+    )
+
+    invitations, _send_seconds, _accept_seconds = (
+        dofus_character_login.invite_group_members(
+            leader,
+            targets,
+            ocr=object(),
+            chat_timeout=5.0,
+            invitation_timeout=10.0,
+        )
+    )
+
+    assert commands == []
+    assert all(item["accepted"] for item in invitations)
+    assert all(item["status"] == "already_grouped" for item in invitations)
+    assert all(item["attempts"] == 0 for item in invitations)
 
 
 def test_all_character_titles_must_be_loaded_before_invitations() -> None:

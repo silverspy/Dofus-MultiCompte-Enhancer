@@ -30,6 +30,53 @@ def test_workflow_completion_marker_preserves_the_real_exit_code() -> None:
     assert dofus_panel.parse_workflow_done_marker("regular workflow output") is None
 
 
+def test_emergency_stop_requires_ctrl_q() -> None:
+    assert dofus_panel.is_emergency_stop_hotkey(0x51, {0xA2}) is True
+    assert dofus_panel.is_emergency_stop_hotkey(0x51, set()) is False
+    assert dofus_panel.is_emergency_stop_hotkey(0x50, {0xA2}) is False
+
+
+def test_workflow_status_keeps_stop_hint_visible() -> None:
+    panel = object.__new__(dofus_panel.DofusPanel)
+    calls: list[tuple[str, str, bool]] = []
+    panel.t = lambda key, **_kwargs: "CTRL+Q · STOP" if key == "stop_hint" else key
+    panel.set_status = lambda text, color, persistent=False: calls.append(
+        (text, color, persistent)
+    )
+
+    panel.set_workflow_status("RUNNING", dofus_panel.GOLD)
+
+    assert calls == [("RUNNING\nCTRL+Q · STOP", dofus_panel.GOLD, True)]
+
+
+def test_stop_workflow_terminates_only_an_active_process(monkeypatch) -> None:
+    class Process:
+        pid = 42
+
+        def __init__(self) -> None:
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+    process = Process()
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.workflow = process
+    panel.workflow_cancel_requested = False
+    panel.t = lambda key, **_kwargs: key
+    statuses: list[tuple[str, str]] = []
+    panel.set_workflow_status = lambda text, color: statuses.append((text, color))
+    monkeypatch.setattr(dofus_panel, "append_panel_diagnostic", lambda *_args, **_kwargs: None)
+
+    assert panel.stop_workflow() is True
+    assert process.terminated is True
+    assert panel.workflow_cancel_requested is True
+    assert statuses == [("stopping", dofus_panel.GOLD)]
+
+
 def test_ui_translation_supports_french_and_english() -> None:
     assert dofus_panel.translate("fr", "settings") == "PARAMÈTRES"
     assert dofus_panel.translate("en", "settings") == "SETTINGS"
@@ -37,6 +84,8 @@ def test_ui_translation_supports_french_and_english() -> None:
         dofus_panel.translate("en", "replication_targets", count=3)
         == "REPLICATION ENABLED · 3 TARGETS"
     )
+    assert dofus_panel.translate("fr", "stop_hint") == "CTRL+Q · ARRÊTER"
+    assert dofus_panel.translate("en", "cancelled") == "ACTION STOPPED"
     assert dofus_panel.translate("unknown", "save") == "ENREGISTRER"
     assert dofus_panel.translate("fr", "update_now") == "METTRE À JOUR"
     assert dofus_panel.translate("en", "update_now") == "UPDATE NOW"

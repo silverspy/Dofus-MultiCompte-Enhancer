@@ -332,6 +332,70 @@ def detect_invitation_accept_button(
     return max(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
+def detect_group_member_count(image: np.ndarray) -> int:
+    """Count the portrait cards in the proportional Dofus group bar.
+
+    Group cards form a short row of regularly spaced vertical separators just
+    left of the health controls. Requiring a complete regular sequence avoids
+    interpreting isolated spell or chat edges as a party roster.
+    """
+    height, width = image.shape[:2]
+    x0, x1 = int(width * 0.20), int(width * 0.39)
+    y0, y1 = int(height * 0.875), int(height * 0.98)
+    crop = image[y0:y1, x0:x1]
+    if crop.size == 0:
+        return 0
+
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 120)
+    column_scores = np.mean(edges > 0, axis=0)
+    strong_columns = np.flatnonzero(column_scores >= 0.45)
+
+    peak_columns: list[int] = []
+    cluster: list[int] = []
+    for column in strong_columns.tolist():
+        if cluster and column - cluster[-1] > 5:
+            peak_columns.append(
+                max(cluster, key=lambda item: column_scores[item])
+            )
+            cluster = []
+        cluster.append(column)
+    if cluster:
+        peak_columns.append(max(cluster, key=lambda item: column_scores[item]))
+
+    minimum_spacing = width * 0.022
+    maximum_spacing = width * 0.034
+    best_card_count = 0
+    for start_index in range(len(peak_columns)):
+        card_count = 0
+        previous = peak_columns[start_index]
+        for column in peak_columns[start_index + 1:]:
+            spacing = column - previous
+            if minimum_spacing <= spacing <= maximum_spacing:
+                card_count += 1
+                previous = column
+                best_card_count = max(best_card_count, card_count)
+            elif spacing > maximum_spacing:
+                break
+    return best_card_count
+
+
+def group_roster_is_complete(
+    leader: PlayerWindow,
+    expected_count: int,
+) -> bool:
+    """Confirm an already formed group on two stable leader frames."""
+    if expected_count <= 1:
+        return True
+    counts: list[int] = []
+    for settle_delay in (0.04, 0.02):
+        image, _, _ = capture_window(leader.window_handle, settle_delay=settle_delay)
+        counts.append(detect_group_member_count(image))
+        if len(counts) == 1:
+            time.sleep(0.06)
+    return min(counts, default=0) >= expected_count
+
+
 def accept_group_invitation(
     player: PlayerWindow,
     *,
@@ -748,8 +812,8 @@ def wait_for_game_interfaces(
 
 
 def invitation_attempt_timeouts(final_timeout: float) -> tuple[float, ...]:
-    """Return short probes followed by one final, user-configurable wait."""
-    return 3.0, 7.0, max(10.0, float(final_timeout))
+    """Return one fast probe and one bounded retry."""
+    return 3.0, max(3.0, min(7.0, float(final_timeout)))
 
 
 def invite_group_members(
@@ -779,6 +843,17 @@ def invite_group_members(
     accept_seconds = 0.0
     pending_targets = list(targets)
     timeouts = invitation_attempt_timeouts(invitation_timeout)
+
+    if group_roster_is_complete(leader, len(targets) + 1):
+        for invitation in invitations:
+            invitation["accepted"] = True
+            invitation["status"] = "already_grouped"
+        print(
+            f"Group roster already contains all {len(targets) + 1} characters; "
+            "invitations skipped.",
+            flush=True,
+        )
+        return invitations, send_seconds, accept_seconds
 
     for attempt, accept_timeout in enumerate(timeouts, start=1):
         if not pending_targets:
@@ -871,6 +946,17 @@ def invite_group_members(
             )
 
         pending_targets = failed_this_pass
+        if pending_targets and group_roster_is_complete(leader, len(targets) + 1):
+            for target in pending_targets:
+                invitation = invitations_by_handle[target.window_handle]
+                invitation["accepted"] = True
+                invitation["status"] = "already_grouped"
+            print(
+                "Complete group roster detected; remaining invitation retries skipped.",
+                flush=True,
+            )
+            pending_targets = []
+            break
         if pending_targets and attempt < len(timeouts):
             missing_names = ", ".join(target.pseudo for target in pending_targets)
             print(f"Reinviting missing character(s): {missing_names}.", flush=True)

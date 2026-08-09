@@ -11,6 +11,7 @@ from chat_vision import detect_chat_bar
 from dofus_character_login import (
     PlayerWindow,
     accept_group_invitation,
+    detect_group_member_count,
     detect_invitation_accept_button,
     detect_start_play_button,
     read_selected_pseudo,
@@ -124,6 +125,26 @@ def test_green_action_without_refuse_button_is_not_clicked() -> None:
     cv2.rectangle(image, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
 
     assert detect_invitation_accept_button(image) is None
+
+
+def test_complete_group_roster_counts_regular_portrait_cards() -> None:
+    image = np.full((1000, 1600, 3), 25, dtype=np.uint8)
+    y0, y1 = int(1000 * 0.875), int(1000 * 0.98) - 1
+    first_boundary = int(1600 * 0.235)
+    card_width = int(1600 * 0.029)
+    for boundary_index in range(5):
+        x = first_boundary + boundary_index * card_width
+        cv2.line(image, (x, y0), (x, y1), (210, 210, 210), thickness=2)
+
+    assert detect_group_member_count(image) == 4
+
+
+def test_isolated_bottom_bar_edges_are_not_a_group_roster() -> None:
+    image = np.full((1000, 1600, 3), 25, dtype=np.uint8)
+    cv2.line(image, (400, 875), (400, 978), (210, 210, 210), thickness=2)
+    cv2.line(image, (610, 875), (610, 978), (210, 210, 210), thickness=2)
+
+    assert detect_group_member_count(image) == 0
 
 
 def test_invitation_ocr_rejects_unrelated_green_action() -> None:
