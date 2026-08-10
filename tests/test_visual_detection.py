@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
+import ankama_launcher
 import chat_vision
 import dofus_character_login
 from chat_vision import detect_chat_bar
@@ -164,8 +165,7 @@ def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> N
     cv2.rectangle(invitation, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
     cv2.rectangle(invitation, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
-    cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    captures = iter([invitation, invitation, cleared, cleared])
+    captures = iter([invitation, invitation])
     settle_delays: list[float] = []
     clicks: list[tuple[int, int]] = []
 
@@ -205,16 +205,17 @@ def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> N
 
     assert button.click_x in range(735, 746)
     assert clicks == [(10 + button.click_x, 20 + button.click_y)]
-    assert settle_delays == [0.08, 0.02, 0.04, 0.04]
+    assert settle_delays == [0.08, 0.02]
 
 
-def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> None:
+def test_confirmed_click_is_success_even_if_invitation_animation_would_linger(
+    monkeypatch,
+) -> None:
     invitation = np.full((600, 1000, 3), 170, dtype=np.uint8)
     cv2.rectangle(invitation, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
     cv2.rectangle(invitation, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
-    cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    captures = iter([invitation, invitation, invitation, cleared, cleared])
+    captures = iter([invitation, invitation])
     clicks: list[tuple[int, int]] = []
     sleeps: list[float] = []
 
@@ -245,7 +246,7 @@ def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> No
     button = accept_group_invitation(player, timeout=1.0)
 
     assert clicks == [(10 + button.click_x, 20 + button.click_y)]
-    assert sleeps == [0.08, 0.20, 0.20, 0.25]
+    assert sleeps == [0.08]
 
 
 def test_account_count_is_inferred_after_window_set_stabilizes(monkeypatch) -> None:
@@ -301,6 +302,51 @@ def test_start_play_rejects_gray_loading_state() -> None:
     cv2.rectangle(image, (465, 180), (535, 215), (110, 110, 110), thickness=-1)
 
     assert detect_start_play_button(image, FakeOcr(["JOUER"], [0.99])) is None
+
+
+def test_launcher_live_scans_cache_templates_and_use_short_settle(monkeypatch) -> None:
+    image = np.zeros((600, 1000, 3), dtype=np.uint8)
+    template = np.zeros((12, 24, 3), dtype=np.uint8)
+    prepared = ((np.zeros((12, 24), dtype=np.uint8), 1.0),)
+    captures: list[float] = []
+    prepared_calls: list[np.ndarray] = []
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(
+        ankama_launcher,
+        "ensure_launcher_window",
+        lambda _path: (101, "Ankama Launcher"),
+    )
+    monkeypatch.setattr(ankama_launcher, "load_template", lambda _path: template)
+    monkeypatch.setattr(
+        ankama_launcher,
+        "prepare_multiscale_template",
+        lambda value, _scales: prepared_calls.append(value) or prepared,
+    )
+    monkeypatch.setattr(
+        ankama_launcher,
+        "capture_window",
+        lambda _hwnd, *, settle_delay: (
+            captures.append(settle_delay) or image,
+            0,
+            0,
+        ),
+    )
+    monkeypatch.setattr(
+        ankama_launcher,
+        "detect_play_button",
+        lambda *_args, **_kwargs: ankama_launcher.PlayButton(
+            10, 10, 0.9, 0.9, 1.0
+        ),
+    )
+    monkeypatch.setattr(ankama_launcher.time, "sleep", sleep_calls.append)
+
+    result = ankama_launcher.launch_dofus(dry_run=True, poll_interval=0.15)
+
+    assert result.clicked is False
+    assert captures == [ankama_launcher.LAUNCHER_CAPTURE_SETTLE]
+    assert len(prepared_calls) == 2
+    assert sleep_calls == []
 
 
 def test_selected_pseudo_uses_highest_valid_ocr_candidate() -> None:

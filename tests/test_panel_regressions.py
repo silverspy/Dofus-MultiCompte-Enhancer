@@ -36,6 +36,13 @@ def test_emergency_stop_requires_ctrl_q() -> None:
     assert dofus_panel.is_emergency_stop_hotkey(0x50, {0xA2}) is False
 
 
+def test_replication_settles_are_kept_below_one_frame() -> None:
+    assert dofus_panel.BROADCAST_MOUSE_SOURCE_SETTLE < 0.010
+    assert dofus_panel.BROADCAST_MOUSE_TARGET_SETTLE < 0.005
+    assert dofus_panel.BROADCAST_KEYBOARD_SOURCE_SETTLE < 0.010
+    assert dofus_panel.BROADCAST_KEYBOARD_TARGET_SETTLE < 0.005
+
+
 def test_workflow_status_keeps_stop_hint_visible() -> None:
     panel = object.__new__(dofus_panel.DofusPanel)
     calls: list[tuple[str, str, bool]] = []

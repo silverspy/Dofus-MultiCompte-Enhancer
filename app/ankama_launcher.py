@@ -32,6 +32,11 @@ DEFAULT_LAUNCHER = Path(
     "Programs/Ankama Launcher/Ankama Launcher.exe"
 )
 DEFAULT_ASSETS = Path(__file__).with_name("assets")
+PLAY_BUTTON_SCALES = tuple(float(value) for value in np.linspace(0.65, 1.45, 17))
+FAST_PLAY_BUTTON_SCALES = (1.0, 0.9, 1.1, 0.8, 1.25)
+LAUNCHER_CAPTURE_SETTLE = 0.04
+MINIMUM_POLL_INTERVAL = 0.12
+FULL_SCALE_SCAN_INTERVAL = 1.0
 
 
 @dataclass(frozen=True)
@@ -76,24 +81,52 @@ def load_template(path: Path) -> np.ndarray:
     return template
 
 
+def prepare_multiscale_template(
+    template: np.ndarray,
+    scales: tuple[float, ...],
+) -> tuple[tuple[np.ndarray, float], ...]:
+    """Resize and edge-filter a template once for repeated live scans."""
+    prepared: list[tuple[np.ndarray, float]] = []
+    for scale in scales:
+        width = max(8, int(round(template.shape[1] * scale)))
+        height = max(8, int(round(template.shape[0] * scale)))
+        interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+        resized = cv2.resize(template, (width, height), interpolation=interpolation)
+        edges = cv2.Canny(cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY), 60, 160)
+        prepared.append((edges, scale))
+    return tuple(prepared)
+
+
+def select_prepared_scales(
+    prepared: tuple[tuple[np.ndarray, float], ...],
+    scales: tuple[float, ...],
+) -> tuple[tuple[np.ndarray, float], ...]:
+    """Select cached variants without resizing or edge-filtering them again."""
+    return tuple(
+        variant
+        for variant in prepared
+        if any(abs(variant[1] - scale) < 0.001 for scale in scales)
+    )
+
+
 def best_multiscale_match(
     image: np.ndarray,
     template: np.ndarray,
     *,
     scales: tuple[float, ...],
+    image_edges: np.ndarray | None = None,
+    prepared_template: tuple[tuple[np.ndarray, float], ...] | None = None,
 ) -> TemplateMatch | None:
-    image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    image_edges = cv2.Canny(image_gray, 60, 160)
+    if image_edges is None:
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        image_edges = cv2.Canny(image_gray, 60, 160)
+    prepared = prepared_template or prepare_multiscale_template(template, scales)
     best: TemplateMatch | None = None
 
-    for scale in scales:
-        width = max(8, int(round(template.shape[1] * scale)))
-        height = max(8, int(round(template.shape[0] * scale)))
+    for edges, scale in prepared:
+        height, width = edges.shape[:2]
         if width >= image.shape[1] or height >= image.shape[0]:
             continue
-        interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
-        resized = cv2.resize(template, (width, height), interpolation=interpolation)
-        edges = cv2.Canny(cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY), 60, 160)
         response = cv2.matchTemplate(image_edges, edges, cv2.TM_CCOEFF_NORMED)
         _, score, _, location = cv2.minMaxLoc(response)
         match = TemplateMatch(location[0], location[1], width, height, float(score), scale)
@@ -108,13 +141,27 @@ def detect_play_button(
     text_template: np.ndarray,
     *,
     threshold: float = 0.68,
+    prepared_people: tuple[tuple[np.ndarray, float], ...] | None = None,
+    prepared_text: tuple[tuple[np.ndarray, float], ...] | None = None,
 ) -> PlayButton | None:
     height, width = image.shape[:2]
     # The game card and its button are in the upper-left area.
-    search = image[: int(height * 0.72), : int(width * 0.58)]
-    scales = tuple(float(value) for value in np.linspace(0.65, 1.45, 17))
-    text = best_multiscale_match(search, text_template, scales=scales)
-    people = best_multiscale_match(search, people_template, scales=scales)
+    search = image[: int(height * 0.58), : int(width * 0.40)]
+    search_edges = cv2.Canny(cv2.cvtColor(search, cv2.COLOR_BGR2GRAY), 60, 160)
+    text = best_multiscale_match(
+        search,
+        text_template,
+        scales=PLAY_BUTTON_SCALES,
+        image_edges=search_edges,
+        prepared_template=prepared_text,
+    )
+    people = best_multiscale_match(
+        search,
+        people_template,
+        scales=PLAY_BUTTON_SCALES,
+        image_edges=search_edges,
+        prepared_template=prepared_people,
+    )
     if text is None or people is None:
         return None
     if text.score < threshold or people.score < threshold:
@@ -216,7 +263,7 @@ def launch_dofus(
     launcher_path: Path = DEFAULT_LAUNCHER,
     assets_dir: Path = DEFAULT_ASSETS,
     wait_timeout: float = 2700.0,
-    poll_interval: float = 5.0,
+    poll_interval: float = 0.20,
     dry_run: bool = False,
     diagnostic_path: Path | None = None,
 ) -> LaunchResult:
@@ -225,12 +272,36 @@ def launch_dofus(
     hwnd, title = ensure_launcher_window(launcher_path)
     people = load_template(assets_dir / "ankama-play-people.png")
     text = load_template(assets_dir / "ankama-play-text.png")
+    prepared_people = prepare_multiscale_template(people, PLAY_BUTTON_SCALES)
+    prepared_text = prepare_multiscale_template(text, PLAY_BUTTON_SCALES)
+    fast_people = select_prepared_scales(prepared_people, FAST_PLAY_BUTTON_SCALES)
+    fast_text = select_prepared_scales(prepared_text, FAST_PLAY_BUTTON_SCALES)
     deadline = time.monotonic() + wait_timeout
     last_message = 0.0
+    last_full_scan = 0.0
 
     while time.monotonic() < deadline:
-        image, origin_x, origin_y = capture_window(hwnd)
-        button = detect_play_button(image, people, text)
+        image, origin_x, origin_y = capture_window(
+            hwnd,
+            settle_delay=LAUNCHER_CAPTURE_SETTLE,
+        )
+        button = detect_play_button(
+            image,
+            people,
+            text,
+            prepared_people=fast_people,
+            prepared_text=fast_text,
+        )
+        now = time.monotonic()
+        if button is None and now - last_full_scan >= FULL_SCALE_SCAN_INTERVAL:
+            button = detect_play_button(
+                image,
+                people,
+                text,
+                prepared_people=prepared_people,
+                prepared_text=prepared_text,
+            )
+            last_full_scan = now
         if button is not None:
             if diagnostic_path is not None:
                 save_button_diagnostic(image, button, diagnostic_path)
@@ -251,7 +322,7 @@ def launch_dofus(
             elapsed = now - start
             print(f"PLAY unavailable after {elapsed:.0f}s; an update may be running, waiting...")
             last_message = now
-        time.sleep(max(0.5, poll_interval))
+        time.sleep(max(MINIMUM_POLL_INTERVAL, poll_interval))
 
     raise TimeoutError(f"The PLAY button did not appear within {wait_timeout:.0f} seconds.")
 
@@ -262,7 +333,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--assets-dir", type=Path, default=DEFAULT_ASSETS)
     parser.add_argument("--image", type=Path, help="test a screenshot without opening the launcher")
     parser.add_argument("--timeout", type=float, default=2700.0, help="maximum wait time in seconds")
-    parser.add_argument("--poll", type=float, default=5.0, help="polling interval")
+    parser.add_argument("--poll", type=float, default=0.20, help="polling interval")
     parser.add_argument("--dry-run", action="store_true", help="detect without clicking")
     parser.add_argument("--diagnostic", type=Path, help="save the annotated detection image")
     return parser.parse_args()
