@@ -51,6 +51,10 @@ PANEL_DIAGNOSTICS_PATH = DATA_DIR / "panel-diagnostics.log"
 MINIMUM_VISIBLE_PROFILES = 2
 WORKFLOW_DONE_PREFIX = "__WORKFLOW_DONE__:"
 CLICK_DRAG_THRESHOLD = 4
+BROADCAST_MOUSE_SOURCE_SETTLE = 0.006
+BROADCAST_MOUSE_TARGET_SETTLE = 0.003
+BROADCAST_KEYBOARD_SOURCE_SETTLE = 0.005
+BROADCAST_KEYBOARD_TARGET_SETTLE = 0.002
 
 
 def workflow_done_marker(exit_code: int) -> str:
@@ -2250,7 +2254,7 @@ class DofusPanel:
         """Replay a physical click on each client, then restore the source."""
         # Let Windows deliver the original click to the source window before
         # rapidly activating secondary windows.
-        time.sleep(0.020)
+        time.sleep(BROADCAST_MOUSE_SOURCE_SETTLE)
         original_cursor = POINT()
         user32.GetCursorPos(ctypes.byref(original_cursor))
         self.broadcast_replay_active.set()
@@ -2271,7 +2275,7 @@ class DofusPanel:
                 if not user32.ClientToScreen(handle, ctypes.byref(point)):
                     continue
                 user32.SetCursorPos(point.x, point.y)
-                time.sleep(0.012)
+                time.sleep(BROADCAST_MOUSE_TARGET_SETTLE)
 
                 if action.message_id == WM_LBUTTONUP:
                     user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
@@ -2303,7 +2307,7 @@ class DofusPanel:
 
     def replay_keyboard_action(self, action: BroadcastKeyboardAction) -> None:
         """Replay a key or key combination on each secondary window."""
-        time.sleep(0.015)
+        time.sleep(BROADCAST_KEYBOARD_SOURCE_SETTLE)
         self.broadcast_replay_active.set()
 
         def emit_key(
@@ -2322,7 +2326,7 @@ class DofusPanel:
                 if not user32.IsWindow(handle):
                     continue
                 activate_window(handle)
-                time.sleep(0.008)
+                time.sleep(BROADCAST_KEYBOARD_TARGET_SETTLE)
                 for modifier in action.modifiers:
                     modifier_scan = int(user32.MapVirtualKeyW(modifier, 0))
                     emit_key(modifier, modifier_scan, False)

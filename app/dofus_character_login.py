@@ -511,7 +511,7 @@ def wait_for_dofus_windows(
     )
     if should_launch:
         print("Starting the selected Ankama accounts.", flush=True)
-        launch_dofus(poll_interval=0.5)
+        launch_dofus(poll_interval=0.15)
         print("Launcher clicked; waiting for Dofus windows...", flush=True)
 
     deadline = time.monotonic() + launch_wait

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
+import ankama_launcher
 import chat_vision
 import dofus_character_login
 from chat_vision import detect_chat_bar
@@ -301,6 +302,51 @@ def test_start_play_rejects_gray_loading_state() -> None:
     cv2.rectangle(image, (465, 180), (535, 215), (110, 110, 110), thickness=-1)
 
     assert detect_start_play_button(image, FakeOcr(["JOUER"], [0.99])) is None
+
+
+def test_launcher_live_scans_cache_templates_and_use_short_settle(monkeypatch) -> None:
+    image = np.zeros((600, 1000, 3), dtype=np.uint8)
+    template = np.zeros((12, 24, 3), dtype=np.uint8)
+    prepared = ((np.zeros((12, 24), dtype=np.uint8), 1.0),)
+    captures: list[float] = []
+    prepared_calls: list[np.ndarray] = []
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(
+        ankama_launcher,
+        "ensure_launcher_window",
+        lambda _path: (101, "Ankama Launcher"),
+    )
+    monkeypatch.setattr(ankama_launcher, "load_template", lambda _path: template)
+    monkeypatch.setattr(
+        ankama_launcher,
+        "prepare_multiscale_template",
+        lambda value, _scales: prepared_calls.append(value) or prepared,
+    )
+    monkeypatch.setattr(
+        ankama_launcher,
+        "capture_window",
+        lambda _hwnd, *, settle_delay: (
+            captures.append(settle_delay) or image,
+            0,
+            0,
+        ),
+    )
+    monkeypatch.setattr(
+        ankama_launcher,
+        "detect_play_button",
+        lambda *_args, **_kwargs: ankama_launcher.PlayButton(
+            10, 10, 0.9, 0.9, 1.0
+        ),
+    )
+    monkeypatch.setattr(ankama_launcher.time, "sleep", sleep_calls.append)
+
+    result = ankama_launcher.launch_dofus(dry_run=True, poll_interval=0.15)
+
+    assert result.clicked is False
+    assert captures == [ankama_launcher.LAUNCHER_CAPTURE_SETTLE]
+    assert len(prepared_calls) == 2
+    assert sleep_calls == []
 
 
 def test_selected_pseudo_uses_highest_valid_ocr_candidate() -> None:
