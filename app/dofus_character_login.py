@@ -408,7 +408,10 @@ def accept_group_invitation(
     The full-screen visual detector is deliberately used without OCR here.
     Its panel, colour, size, and aspect-ratio checks are fast enough to run on
     every poll, while OCR remains available to callers that need additional
-    diagnostics or validation.
+    diagnostics or validation. Once the same button is confirmed in two stable
+    frames, one successful click is the acceptance boundary: post-click frames
+    can retain the invitation during its closing animation and must not cause a
+    duplicate command or click.
     """
     windows = list_dofus_windows()
     if any(hwnd == player.window_handle for hwnd, _ in windows):
@@ -454,21 +457,7 @@ def accept_group_invitation(
                 origin_x + stable_button.click_x,
                 origin_y + stable_button.click_y,
             )
-
-            # Never treat one animation frame as confirmation. The panel must
-            # be absent in two consecutive captures before acceptance succeeds.
-            missing_confirmations = 0
-            for confirmation_delay in (0.20, 0.20, 0.25):
-                time.sleep(confirmation_delay)
-                verification, _, _ = capture_window(hwnd, settle_delay=0.04)
-                if detect_invitation_accept_button(verification) is None:
-                    missing_confirmations += 1
-                    if missing_confirmations == 2:
-                        return detected_button
-                else:
-                    missing_confirmations = 0
-            time.sleep(max(0.25, poll_interval))
-            continue
+            return detected_button
         time.sleep(max(0.05, poll_interval))
     raise TimeoutError(
         f"ACCEPT button was not found for {player.pseudo} within {timeout:.0f}s."

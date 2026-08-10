@@ -164,8 +164,7 @@ def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> N
     cv2.rectangle(invitation, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
     cv2.rectangle(invitation, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
-    cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    captures = iter([invitation, invitation, cleared, cleared])
+    captures = iter([invitation, invitation])
     settle_delays: list[float] = []
     clicks: list[tuple[int, int]] = []
 
@@ -205,16 +204,17 @@ def test_live_invitation_acceptance_uses_fast_visual_detection(monkeypatch) -> N
 
     assert button.click_x in range(735, 746)
     assert clicks == [(10 + button.click_x, 20 + button.click_y)]
-    assert settle_delays == [0.08, 0.02, 0.04, 0.04]
+    assert settle_delays == [0.08, 0.02]
 
 
-def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> None:
+def test_confirmed_click_is_success_even_if_invitation_animation_would_linger(
+    monkeypatch,
+) -> None:
     invitation = np.full((600, 1000, 3), 170, dtype=np.uint8)
     cv2.rectangle(invitation, (620, 240), (830, 360), (35, 37, 48), thickness=-1)
     cv2.rectangle(invitation, (631, 320), (701, 335), (70, 70, 75), thickness=-1)
     cv2.rectangle(invitation, (705, 320), (775, 335), (30, 180, 130), thickness=-1)
-    cleared = np.full((600, 1000, 3), 170, dtype=np.uint8)
-    captures = iter([invitation, invitation, invitation, cleared, cleared])
+    captures = iter([invitation, invitation])
     clicks: list[tuple[int, int]] = []
     sleeps: list[float] = []
 
@@ -245,7 +245,7 @@ def test_invitation_animation_does_not_trigger_a_second_click(monkeypatch) -> No
     button = accept_group_invitation(player, timeout=1.0)
 
     assert clicks == [(10 + button.click_x, 20 + button.click_y)]
-    assert sleeps == [0.08, 0.20, 0.20, 0.25]
+    assert sleeps == [0.08]
 
 
 def test_account_count_is_inferred_after_window_set_stabilizes(monkeypatch) -> None:
