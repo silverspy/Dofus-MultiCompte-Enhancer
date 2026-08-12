@@ -16,6 +16,7 @@ tkinter_binaries = [
     (str(python_root / "DLLs" / "tk86t.dll"), "."),
 ]
 tkinter_datas = [
+    (str(python_root / "Lib" / "tkinter"), "tkinter"),
     (str(python_root / "tcl" / "tcl8.6"), "_tcl_data"),
     (str(python_root / "tcl" / "tk8.6"), "_tk_data"),
     (str(python_root / "tcl" / "tcl8"), "tcl8"),

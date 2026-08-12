@@ -68,6 +68,7 @@ jobs:
             "_tkinter.pyd",
             "tcl86t.dll",
             "tk86t.dll",
+            "tkinter/__init__.py",
             "_tcl_data/init.tcl",
             "_tk_data/tk.tcl"
           )

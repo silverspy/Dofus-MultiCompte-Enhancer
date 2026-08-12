@@ -33,6 +33,7 @@ def test_pyinstaller_builds_bundle_tkinter_explicitly() -> None:
         assert '"_tkinter.pyd"' in content
         assert '"tcl86t.dll"' in content
         assert '"tk86t.dll"' in content
+        assert '"Lib" / "tkinter"' in content
         assert '"_tcl_data"' in content
         assert '"_tk_data"' in content
         assert 'runtime_hooks=["app/runtime_tkinter.py"]' in content
