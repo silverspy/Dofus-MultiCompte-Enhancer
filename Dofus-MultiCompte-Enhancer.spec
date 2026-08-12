@@ -53,7 +53,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # Keep the executable unpacked. UPX compression saves little for this
+    # bundle and makes heuristic antivirus analysis less transparent.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
