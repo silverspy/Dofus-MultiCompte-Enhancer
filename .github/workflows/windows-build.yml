@@ -60,6 +60,24 @@ jobs:
           --workpath build-installed
           Dofus-MultiCompte-Enhancer-Onedir.spec
 
+      - name: Verify the bundled Tkinter runtime
+        shell: pwsh
+        run: |
+          $runtime = "dist-installed/Dofus-MultiCompte-Enhancer/_internal"
+          $requiredFiles = @(
+            "_tkinter.pyd",
+            "tcl86t.dll",
+            "tk86t.dll",
+            "_tcl_data/init.tcl",
+            "_tk_data/tk.tcl"
+          )
+          foreach ($file in $requiredFiles) {
+            $path = Join-Path $runtime $file
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Tkinter runtime file: $path"
+            }
+          }
+
       - name: Scan application executables with Microsoft Defender
         shell: pwsh
         run: |

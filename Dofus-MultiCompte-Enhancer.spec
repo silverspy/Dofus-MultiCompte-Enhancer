@@ -1,6 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from PyInstaller.utils.hooks import collect_data_files
+import sys
+from pathlib import Path
 
 
 # RapidOCR supports several optional inference backends. The application uses
@@ -10,6 +12,17 @@ from PyInstaller.utils.hooks import collect_data_files
 # import keeps the dynamically selected ONNX engine available.
 rapidocr_datas = collect_data_files("rapidocr")
 rapidocr_hiddenimports = ["rapidocr.inference_engine.onnxruntime"]
+python_root = Path(sys.base_prefix)
+tkinter_binaries = [
+    (str(python_root / "DLLs" / "_tkinter.pyd"), "."),
+    (str(python_root / "DLLs" / "tcl86t.dll"), "."),
+    (str(python_root / "DLLs" / "tk86t.dll"), "."),
+]
+tkinter_datas = [
+    (str(python_root / "tcl" / "tcl8.6"), "_tcl_data"),
+    (str(python_root / "tcl" / "tk8.6"), "_tk_data"),
+    (str(python_root / "tcl" / "tcl8"), "tcl8"),
+]
 excluded_modules = [
     "pandas",  # optional tqdm integration; not used by the application
     "pytest",
@@ -24,19 +37,21 @@ excluded_modules = [
 a = Analysis(
     ["app/dofus_panel.pyw"],
     pathex=["app"],
-    binaries=[],
-    datas=[("app/assets", "assets"), *rapidocr_datas],
+    binaries=tkinter_binaries,
+    datas=[("app/assets", "assets"), *rapidocr_datas, *tkinter_datas],
     hiddenimports=[
         "ankama_launcher",
         "chat_vision",
         "dofus_character_login",
         "localization",
         "panel_settings",
+        "tkinter",
+        "_tkinter",
         *rapidocr_hiddenimports,
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=["app/runtime_tkinter.py"],
     excludes=excluded_modules,
     noarchive=False,
     optimize=0,
