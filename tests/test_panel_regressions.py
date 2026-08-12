@@ -203,6 +203,38 @@ def test_taskbar_refresh_preserves_exact_panel_geometry(monkeypatch) -> None:
     assert geometry_calls == ["42x196+1730+420"]
 
 
+def test_panel_resizes_native_wrapper_to_all_player_cells() -> None:
+    geometry_calls: list[str] = []
+
+    class Root:
+        def update_idletasks(self) -> None:
+            pass
+
+        def winfo_x(self) -> int:
+            return 1700
+
+        def winfo_y(self) -> int:
+            return 300
+
+        def geometry(self, value: str) -> None:
+            geometry_calls.append(value)
+
+    class Shell:
+        def winfo_reqwidth(self) -> int:
+            return 40
+
+        def winfo_reqheight(self) -> int:
+            return 172
+
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.root = Root()
+    panel.shell = Shell()
+
+    panel.resize_to_content()
+
+    assert geometry_calls == ["40x172+1700+300"]
+
+
 def test_rounded_window_uses_antialiased_dwm_on_native_wrapper(monkeypatch) -> None:
     region_calls: list[tuple[int, object, bool]] = []
     dwm_calls: list[tuple[int, int, int]] = []
