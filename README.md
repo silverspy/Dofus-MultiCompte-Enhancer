@@ -52,12 +52,12 @@ Choisissez votre format depuis la [dernière Release](https://github.com/silvers
 
 | Version | Pour quel usage ? |
 |---|---|
-| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | Installation Windows classique optimisée pour un démarrage rapide, avec raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. |
-| **`Dofus-MultiCompte-Enhancer-Portable.exe`** | Aucun installateur : placez cet exécutable où vous le souhaitez et lancez-le directement. La mise à jour portable remplace et relance automatiquement l'application. |
+| **`Dofus-MultiCompte-Enhancer-Setup.exe` — recommandé** | Installation Windows classique optimisée pour un démarrage rapide, avec raccourcis dans le menu Démarrer et sur le Bureau, mises à jour intégrées et désinstalleur propre. Cette édition utilise le runtime Python officiel et des fichiers applicatifs séparés afin de réduire au maximum les faux positifs et les mises en quarantaine par Microsoft Defender. |
+| **`Dofus-MultiCompte-Enhancer-Portable.exe`** | Aucun installateur : placez cet exécutable où vous le souhaitez et lancez-le directement. Ce fichier autonome repose sur PyInstaller ; son format fortement empaqueté est plus susceptible de déclencher une détection heuristique erronée de l'antivirus. |
 
-Aucune installation de Python n'est nécessaire. Les versions publiées sont signées avec Authenticode lorsque le certificat de publication est configuré dans GitHub Actions. Une nouvelle identité de signature peut malgré tout afficher temporairement SmartScreen pendant que sa réputation se construit.
+**Pour une utilisation normale, choisissez l'installateur.** Cette recommandation vise principalement à éviter que Windows Defender considère à tort l'application comme malveillante et place ses fichiers en quarantaine ; elle ne concerne pas seulement l'avertissement SmartScreen. Aucun format non signé ne peut garantir l'absence totale de faux positif, mais l'édition installée retire la principale source des détections rencontrées avec l'exécutable portable.
 
-La version est distribuée sans signature Authenticode publique et Windows peut donc afficher un avertissement SmartScreen. GitHub calcule automatiquement l'empreinte SHA-256 de chaque fichier et l'inclut dans les métadonnées de la Release.
+Aucune installation séparée de Python n'est nécessaire. Chaque build est testé et analysé par Microsoft Defender avant sa publication. GitHub calcule également l'empreinte SHA-256 des fichiers et fournit une attestation de provenance avec la Release. L'application ne possède actuellement pas de signature Authenticode publiquement reconnue : Windows peut donc encore afficher un avertissement SmartScreen distinct d'une détection antivirus.
 
 Les réglages et les personnages détectés sont enregistrés dans :
 
@@ -131,12 +131,12 @@ Choose a package from the [latest Release](https://github.com/silverspy/Dofus-Mu
 
 | Package | Best for |
 |---|---|
-| **`Dofus-MultiCompte-Enhancer-Setup.exe`** | A standard per-user Windows installation optimized for fast startup, with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. |
-| **`Dofus-MultiCompte-Enhancer-Portable.exe`** | No installer: place this executable anywhere and run it directly. Portable updates replace and restart the application automatically. |
+| **`Dofus-MultiCompte-Enhancer-Setup.exe` — recommended** | A standard per-user Windows installation optimized for fast startup, with Start Menu and Desktop shortcuts, integrated updates, and a clean uninstaller. This edition uses the official Python runtime and separate application files to minimize false positives and quarantines by Microsoft Defender. |
+| **`Dofus-MultiCompte-Enhancer-Portable.exe`** | No installer: place this executable anywhere and run it directly. This standalone file uses PyInstaller; its heavily bundled format is more likely to trigger an incorrect heuristic antivirus detection. |
 
-Python is not required for the released executable. Published builds use Authenticode when the release certificate is configured in GitHub Actions. A new signing identity can still trigger SmartScreen temporarily while its reputation develops.
+**Choose the installer for normal use.** This recommendation primarily aims to prevent Windows Defender from incorrectly classifying the application as malicious and quarantining its files; it is not merely about the SmartScreen warning. No unsigned distribution can guarantee that a false positive will never occur, but the installed edition removes the main source of the detections encountered with the portable executable.
 
-The application is distributed without a publicly trusted Authenticode signature, so Windows may display a SmartScreen warning. GitHub automatically computes each file's SHA-256 digest and includes it in the Release metadata.
+No separate Python installation is required. Every build is tested and scanned with Microsoft Defender before release. GitHub also computes the files' SHA-256 digests and provides a provenance attestation with the Release. The application does not currently have a publicly trusted Authenticode signature, so Windows may still show a SmartScreen warning, which is separate from an antivirus detection.
 
 Settings and detected characters are stored in:
 
