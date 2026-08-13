@@ -20,10 +20,7 @@ def test_windows_build_scans_both_application_editions() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "Scan application executables with Microsoft Defender" in workflow
     assert "dist/Dofus-MultiCompte-Enhancer.exe" in workflow
-    assert (
-        "dist-installed/Dofus-MultiCompte-Enhancer/"
-        "Dofus-MultiCompte-Enhancer.exe"
-    ) in workflow
+    assert "dist-installed/runtime/pythonw.exe" in workflow
     assert "-DisableRemediation" in workflow
 
 
@@ -41,7 +38,7 @@ def test_pyinstaller_builds_bundle_tkinter_explicitly() -> None:
 
 def test_windows_build_validates_the_tkinter_runtime() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    assert "Verify the bundled Tkinter runtime" in workflow
-    assert '"_tkinter.pyd"' in workflow
-    assert '"_tcl_data/init.tcl"' in workflow
-    assert '"_tk_data/tk.tcl"' in workflow
+    assert "Verify the transparent Python runtime" in workflow
+    assert '"DLLs/_tkinter.pyd"' in workflow
+    assert '"tcl/tcl8.6/init.tcl"' in workflow
+    assert '"tcl/tk8.6/tk.tcl"' in workflow

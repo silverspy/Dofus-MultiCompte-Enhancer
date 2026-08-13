@@ -53,24 +53,22 @@ jobs:
       - name: Build the portable executable
         run: python -m PyInstaller --noconfirm --clean Dofus-MultiCompte-Enhancer.spec
 
-      - name: Build the fast installed application
-        run: >-
-          python -m PyInstaller --noconfirm --clean
-          --distpath dist-installed
-          --workpath build-installed
-          Dofus-MultiCompte-Enhancer-Onedir.spec
+      - name: Build the transparent installed application
+        shell: pwsh
+        run: scripts/Build-InstalledRuntime.ps1
 
-      - name: Verify the bundled Tkinter runtime
+      - name: Verify the transparent Python runtime
         shell: pwsh
         run: |
-          $runtime = "dist-installed/Dofus-MultiCompte-Enhancer/_internal"
+          $runtime = "dist-installed/runtime"
           $requiredFiles = @(
-            "_tkinter.pyd",
-            "tcl86t.dll",
-            "tk86t.dll",
-            "tkinter/__init__.py",
-            "_tcl_data/init.tcl",
-            "_tk_data/tk.tcl"
+            "pythonw.exe",
+            "DLLs/_tkinter.pyd",
+            "DLLs/tcl86t.dll",
+            "DLLs/tk86t.dll",
+            "Lib/tkinter/__init__.py",
+            "tcl/tcl8.6/init.tcl",
+            "tcl/tk8.6/tk.tcl"
           )
           foreach ($file in $requiredFiles) {
             $path = Join-Path $runtime $file
@@ -89,7 +87,7 @@ jobs:
           }
           $executables = @(
             "dist/Dofus-MultiCompte-Enhancer.exe",
-            "dist-installed/Dofus-MultiCompte-Enhancer/Dofus-MultiCompte-Enhancer.exe"
+            "dist-installed/runtime/pythonw.exe"
           )
           foreach ($executable in $executables) {
             & $scanner `
@@ -137,8 +135,7 @@ jobs:
             throw "SignTool was not found on the Windows runner."
           }
           $executables = @(
-            "dist/Dofus-MultiCompte-Enhancer.exe",
-            "dist-installed/Dofus-MultiCompte-Enhancer/Dofus-MultiCompte-Enhancer.exe"
+            "dist/Dofus-MultiCompte-Enhancer.exe"
           )
           foreach ($executable in $executables) {
             & $signTool sign `

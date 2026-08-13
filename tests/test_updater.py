@@ -52,6 +52,15 @@ def test_distribution_mode_recognizes_installer_and_onedir_layouts(tmp_path: Pat
     assert updater.is_installed(onedir_executable) is True
 
 
+def test_distribution_mode_recognizes_transparent_installed_runtime(tmp_path: Path) -> None:
+    executable = tmp_path / "runtime" / "pythonw.exe"
+    executable.parent.mkdir()
+    executable.touch()
+    (tmp_path / "installed.marker").touch()
+
+    assert updater.is_installed(executable) is True
+
+
 def test_update_environment_removes_inherited_pyinstaller_state() -> None:
     environment = {
         "PATH": "C:/Windows",

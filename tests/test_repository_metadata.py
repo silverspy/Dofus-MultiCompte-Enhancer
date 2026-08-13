@@ -60,26 +60,28 @@ def test_installer_creates_shortcuts_and_an_uninstaller() -> None:
     assert 'IconFilename: "{app}\\dofus-multicompteenhancer.ico"' in installer
     assert "SignTool=dmce" in installer
     assert "SignedUninstaller=yes" in installer
-    assert "dist-installed\\Dofus-MultiCompte-Enhancer\\*" in installer
+    assert "dist-installed\\*" in installer
     assert "recursesubdirs createallsubdirs" in installer
+    assert '#define MyAppExeName "runtime\\pythonw.exe"' in installer
+    assert '#define MyAppScript "app\\dofus_panel.pyw"' in installer
+    assert 'Parameters: "&quot;{app}\\{#MyAppScript}&quot;"' in installer
+    assert 'Type: files; Name: "{app}\\Dofus-MultiCompte-Enhancer.exe"' in installer
+    assert 'Type: filesandordirs; Name: "{app}\\_internal"' in installer
 
 
-def test_installed_build_uses_onedir_for_fast_startup() -> None:
-    spec = (ROOT / "Dofus-MultiCompte-Enhancer-Onedir.spec").read_text(
-        encoding="utf-8"
-    )
+def test_installed_build_uses_a_transparent_python_runtime() -> None:
     workflow = (ROOT / ".github/workflows/windows-build.yml").read_text(
         encoding="utf-8"
     )
+    script = (ROOT / "scripts/Build-InstalledRuntime.ps1").read_text(
+        encoding="utf-8"
+    )
 
-    assert "exclude_binaries=True" in spec
-    assert "coll = COLLECT(" in spec
-    assert "Dofus-MultiCompte-Enhancer-Onedir.spec" in workflow
-    assert "--distpath dist-installed" in workflow
-    assert (
-        "dist-installed/Dofus-MultiCompte-Enhancer/"
-        "Dofus-MultiCompte-Enhancer.exe"
-    ) in workflow
+    assert "Build-InstalledRuntime.ps1" in workflow
+    assert "dist-installed/runtime/pythonw.exe" in workflow
+    assert "Dofus-MultiCompte-Enhancer-Onedir.spec" not in workflow
+    assert '"pythonw.exe"' in script
+    assert '"installed.marker"' in script
 
 
 def test_release_workflow_supports_optional_authenticode_signing() -> None:
