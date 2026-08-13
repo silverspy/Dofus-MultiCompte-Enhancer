@@ -34,3 +34,7 @@ if ($LASTEXITCODE -gt 7) {
     throw "Application source copy failed with robocopy exit code $LASTEXITCODE."
 }
 New-Item -ItemType File -Force -Path (Join-Path $destinationRoot "installed.marker") | Out-Null
+
+# Robocopy uses exit codes 1 through 7 for successful copy outcomes. Do not
+# leak its final success code as the PowerShell script's process exit code.
+exit 0
