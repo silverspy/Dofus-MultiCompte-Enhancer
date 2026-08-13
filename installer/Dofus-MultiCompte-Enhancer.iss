@@ -4,7 +4,8 @@
 
 #define MyAppName "Dofus MultiCompte Enhancer"
 #define MyAppPublisher "silverspy"
-#define MyAppExeName "Dofus-MultiCompte-Enhancer.exe"
+#define MyAppExeName "runtime\pythonw.exe"
+#define MyAppScript "app\dofus_panel.pyw"
 
 [Setup]
 AppId={{84766B7E-2D98-4AF1-A1EA-1F6E0AE3F31E}
@@ -27,8 +28,8 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=yes
-RestartApplications=yes
+CloseApplications=no
+RestartApplications=no
 Uninstallable=yes
 #ifdef EnableCodeSigning
 SignTool=dmce
@@ -43,13 +44,18 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-Source: "..\dist-installed\Dofus-MultiCompte-Enhancer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist-installed\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\app\assets\dofus-multicompteenhancer.ico"; DestDir: "{app}"; Flags: ignoreversion
 
+[InstallDelete]
+; Remove the legacy PyInstaller runtime before installing the transparent one.
+Type: files; Name: "{app}\Dofus-MultiCompte-Enhancer.exe"
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Icons]
-Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
+Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "&quot;{app}\{#MyAppScript}&quot;"; WorkingDir: "{app}\app"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
 Name: "{autoprograms}\{#MyAppName}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "&quot;{app}\{#MyAppScript}&quot;"; WorkingDir: "{app}\app"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "&quot;{app}\{#MyAppScript}&quot;"; WorkingDir: "{app}\app"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

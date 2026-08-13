@@ -34,7 +34,8 @@ from updater import ReleaseInfo, fetch_latest_release, is_newer_release, launch_
 
 SOURCE_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", SOURCE_DIR))
-if getattr(sys, "frozen", False):
+INSTALLED_RUNTIME = (SOURCE_DIR.parent / "installed.marker").is_file()
+if getattr(sys, "frozen", False) or INSTALLED_RUNTIME:
     DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Dofus MultiCompte Enhancer"
 else:
     DATA_DIR = SOURCE_DIR
@@ -2435,7 +2436,9 @@ class DofusPanel:
 
     def check_for_updates_async(self) -> None:
         """Check GitHub in the background without delaying application startup."""
-        if self.update_check_started or not getattr(sys, "frozen", False):
+        if self.update_check_started or not (
+            getattr(sys, "frozen", False) or INSTALLED_RUNTIME
+        ):
             return
         self.update_check_started = True
 

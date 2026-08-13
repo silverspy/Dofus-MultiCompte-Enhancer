@@ -86,6 +86,7 @@ def is_installed(executable: Path | None = None) -> bool:
     return (
         (application_directory / "unins000.exe").is_file()
         or (application_directory / "_internal").is_dir()
+        or (application_directory.parent / "installed.marker").is_file()
     )
 
 
