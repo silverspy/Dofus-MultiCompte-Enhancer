@@ -53,9 +53,11 @@ def test_installer_creates_shortcuts_and_an_uninstaller() -> None:
 
     assert "Uninstallable=yes" in installer
     assert "DefaultDirName={localappdata}\\Programs\\{#MyAppName}" in installer
-    assert "{group}\\{#MyAppName}" in installer
+    assert "{autoprograms}\\{#MyAppName}\\{#MyAppName}" in installer
     assert "{autodesktop}\\{#MyAppName}" in installer
     assert "{uninstallexe}" in installer
+    assert 'DestDir: "{app}"; Flags: ignoreversion' in installer
+    assert 'IconFilename: "{app}\\dofus-multicompteenhancer.ico"' in installer
     assert "SignTool=dmce" in installer
     assert "SignedUninstaller=yes" in installer
     assert "dist-installed\\Dofus-MultiCompte-Enhancer\\*" in installer
