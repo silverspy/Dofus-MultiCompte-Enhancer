@@ -60,6 +60,48 @@ jobs:
           --workpath build-installed
           Dofus-MultiCompte-Enhancer-Onedir.spec
 
+      - name: Verify the bundled Tkinter runtime
+        shell: pwsh
+        run: |
+          $runtime = "dist-installed/Dofus-MultiCompte-Enhancer/_internal"
+          $requiredFiles = @(
+            "_tkinter.pyd",
+            "tcl86t.dll",
+            "tk86t.dll",
+            "tkinter/__init__.py",
+            "_tcl_data/init.tcl",
+            "_tk_data/tk.tcl"
+          )
+          foreach ($file in $requiredFiles) {
+            $path = Join-Path $runtime $file
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Tkinter runtime file: $path"
+            }
+          }
+
+      - name: Scan application executables with Microsoft Defender
+        shell: pwsh
+        run: |
+          $scanner = Join-Path $env:ProgramFiles "Windows Defender/MpCmdRun.exe"
+          if (-not (Test-Path -LiteralPath $scanner)) {
+            Write-Warning "Microsoft Defender scanner is unavailable on this runner."
+            exit 0
+          }
+          $executables = @(
+            "dist/Dofus-MultiCompte-Enhancer.exe",
+            "dist-installed/Dofus-MultiCompte-Enhancer/Dofus-MultiCompte-Enhancer.exe"
+          )
+          foreach ($executable in $executables) {
+            & $scanner `
+              -Scan `
+              -ScanType 3 `
+              -File (Resolve-Path -LiteralPath $executable) `
+              -DisableRemediation
+            if ($LASTEXITCODE -ne 0) {
+              throw "Microsoft Defender rejected: $executable"
+            }
+          }
+
       - name: Configure Authenticode signing
         if: env.SIGNING_ENABLED == 'true'
         shell: pwsh

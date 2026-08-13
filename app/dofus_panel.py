@@ -1896,11 +1896,21 @@ class DofusPanel:
         if not self.synchronize_active_player(foreground, force_refresh=True):
             self.refresh_cells()
         self.root.update_idletasks()
+        self.resize_to_content()
         self.ensure_visible()
         self.refresh_settings_hitbox()
         self.root.after_idle(self.refresh_settings_hitbox)
         self.root.after(250, self.refresh_settings_hitbox)
         self.root.after_idle(lambda: apply_rounded_window(self.root))
+
+    def resize_to_content(self) -> None:
+        """Resize the native wrapper after the number of player cells changes."""
+        self.root.update_idletasks()
+        width = max(1, self.shell.winfo_reqwidth())
+        height = max(1, self.shell.winfo_reqheight())
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        self.root.geometry(f"{width}x{height}{x:+d}{y:+d}")
 
     def refresh_settings_hitbox(self) -> None:
         """Cache the settings control bounds for the low-level mouse fallback."""
