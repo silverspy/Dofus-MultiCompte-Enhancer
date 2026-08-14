@@ -64,7 +64,11 @@ def test_installer_creates_shortcuts_and_an_uninstaller() -> None:
     assert "recursesubdirs createallsubdirs" in installer
     assert '#define MyAppExeName "runtime\\pythonw.exe"' in installer
     assert '#define MyAppScript "app\\dofus_panel.pyw"' in installer
-    assert 'Parameters: "&quot;{app}\\{#MyAppScript}&quot;"' in installer
+    assert 'Parameters: """{app}\\{#MyAppScript}"""' in installer
+    assert "&quot;" not in installer
+    assert "Tasks: desktopicon" not in installer
+    assert "Flags: nowait postinstall skipifsilent" not in installer
+    assert "Flags: nowait postinstall" in installer
     assert 'Type: files; Name: "{app}\\Dofus-MultiCompte-Enhancer.exe"' in installer
     assert 'Type: filesandordirs; Name: "{app}\\_internal"' in installer
 

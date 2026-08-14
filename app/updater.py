@@ -190,7 +190,6 @@ def launch_update(
                 "/SUPPRESSMSGBOXES",
                 "/NORESTART",
                 "/CLOSEAPPLICATIONS",
-                "/RESTARTAPPLICATIONS",
             ],
             close_fds=True,
             env=child_environment,
