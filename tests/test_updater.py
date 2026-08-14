@@ -108,6 +108,8 @@ def test_installed_update_launches_setup_with_clean_environment(
 
     command, options = launches[0]
     assert command[0] == str(setup)
+    assert "/CLOSEAPPLICATIONS" in command
+    assert "/RESTARTAPPLICATIONS" not in command
     assert options["env"] == {
         "PATH": "C:/Windows",
         "PYINSTALLER_RESET_ENVIRONMENT": "1",

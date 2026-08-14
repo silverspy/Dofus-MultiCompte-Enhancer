@@ -40,9 +40,6 @@ SignedUninstaller=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
-[Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-
 [Files]
 Source: "..\dist-installed\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\app\assets\dofus-multicompteenhancer.ico"; DestDir: "{app}"; Flags: ignoreversion
@@ -53,9 +50,11 @@ Type: files; Name: "{app}\Dofus-MultiCompte-Enhancer.exe"
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "&quot;{app}\{#MyAppScript}&quot;"; WorkingDir: "{app}\app"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
+Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: """{app}\{#MyAppScript}"""; WorkingDir: "{app}\app"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
 Name: "{autoprograms}\{#MyAppName}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "&quot;{app}\{#MyAppScript}&quot;"; WorkingDir: "{app}\app"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: """{app}\{#MyAppScript}"""; WorkingDir: "{app}\app"; IconFilename: "{app}\dofus-multicompteenhancer.ico"; IconIndex: 0
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "&quot;{app}\{#MyAppScript}&quot;"; WorkingDir: "{app}\app"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; During an automatic update, launch the new runtime explicitly. Restart Manager
+; cannot migrate the command line of the removed legacy PyInstaller executable.
+Filename: "{app}\{#MyAppExeName}"; Parameters: """{app}\{#MyAppScript}"""; WorkingDir: "{app}\app"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall
