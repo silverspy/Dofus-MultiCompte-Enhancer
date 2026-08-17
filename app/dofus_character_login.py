@@ -8,6 +8,7 @@ the game. Character names and window handles are saved in players.json.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 import json
 import re
@@ -25,6 +26,7 @@ from chat_vision import (
     activate_window,
     capture_window,
     click_screen,
+    detect_chat_bar,
     execute_chat_commands_on_window,
     get_client_geometry,
     list_windows_by_executable,
@@ -773,6 +775,93 @@ def players_with_loaded_interfaces(
     return loaded
 
 
+def restore_connected_players(
+    previous_payload: dict[str, object],
+    windows: list[tuple[int, str]],
+    *,
+    verify_in_game: Callable[[int], bool] | None = None,
+) -> list[PlayerWindow] | None:
+    """Match every visible in-game window to a previously detected character.
+
+    A complete one-to-one match is required. Partial matches deliberately fall
+    back to the regular launcher and character-selection workflow so a newly
+    selected account or a client that is still loading cannot be skipped.
+    """
+    saved_players = previous_payload.get("players")
+    if not isinstance(saved_players, list) or not saved_players:
+        return None
+    if len(saved_players) != len(windows):
+        return None
+
+    saved_entries: list[tuple[str, float]] = []
+    saved_names: set[str] = set()
+    for saved in saved_players:
+        if not isinstance(saved, dict):
+            return None
+        pseudo = str(saved.get("pseudo", "")).strip()
+        normalized_pseudo = pseudo.casefold()
+        if not pseudo or normalized_pseudo in saved_names:
+            return None
+        saved_names.add(normalized_pseudo)
+        try:
+            confidence = float(saved.get("ocr_confidence", 1.0))
+        except (TypeError, ValueError):
+            confidence = 1.0
+        saved_entries.append((pseudo, confidence))
+
+    unused_windows = dict(windows)
+    matched_windows: dict[str, tuple[int, str]] = {}
+    for pseudo, _confidence in saved_entries:
+        matches = [
+            (handle, title)
+            for handle, title in unused_windows.items()
+            if title.split(" - ", 1)[0].strip().casefold() == pseudo.casefold()
+        ]
+        if len(matches) > 1:
+            return None
+        if matches:
+            handle, title = matches[0]
+            matched_windows[pseudo.casefold()] = (handle, title)
+            unused_windows.pop(handle)
+
+    unmatched_players = [
+        pseudo
+        for pseudo, _confidence in saved_entries
+        if pseudo.casefold() not in matched_windows
+    ]
+    if unmatched_players or unused_windows:
+        if (
+            len(unmatched_players) != 1
+            or len(unused_windows) != 1
+            or verify_in_game is None
+        ):
+            return None
+        handle, title = next(iter(unused_windows.items()))
+        if not verify_in_game(handle):
+            return None
+        matched_windows[unmatched_players[0].casefold()] = (handle, title)
+
+    restored: list[PlayerWindow] = []
+    for pseudo, confidence in saved_entries:
+        handle, title = matched_windows[pseudo.casefold()]
+        restored.append(
+            PlayerWindow(
+                pseudo=pseudo,
+                ocr_confidence=confidence,
+                window_handle=handle,
+                window_title_before=title,
+                clicked_play=False,
+            )
+        )
+    return restored
+
+
+def window_has_loaded_game_interface(hwnd: int) -> bool:
+    """Confirm the in-game UI through its chat bar without clicking anything."""
+    image, _, _ = capture_window(hwnd, settle_delay=0.06)
+    return detect_chat_bar(image) is not None
+
+
 def wait_for_game_interfaces(
     players: list[PlayerWindow],
     *,
@@ -1026,6 +1115,34 @@ def run_group_invitation_phase(
     return resolved_name, invitations, phase_timings
 
 
+def save_workflow_result(
+    output_path: Path,
+    *,
+    players: list[PlayerWindow],
+    leader: str,
+    invitations: list[dict[str, object]],
+    timings: dict[str, object],
+    workflow_started: float,
+) -> None:
+    timings["workflow_total_seconds"] = round(
+        time.monotonic() - workflow_started,
+        3,
+    )
+    payload = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "account_count": len(players),
+        "leader": leader,
+        "players": [asdict(player) for player in players],
+        "invitations": invitations,
+        "timings": timings,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def login_characters(
     *,
     output_path: Path,
@@ -1042,9 +1159,6 @@ def login_characters(
 ) -> list[PlayerWindow]:
     workflow_started = time.monotonic()
     timings: dict[str, object] = {}
-    template = cv2.imread(str(assets_dir / "dofus-character-play-button.png"))
-    if template is None:
-        raise RuntimeError("Character PLAY button template was not found.")
     # Load OCR models in parallel while Dofus/Ankama starts.
     previous_payload: dict[str, object] = {}
     if output_path.is_file():
@@ -1071,6 +1185,52 @@ def login_characters(
             flush=True,
         )
         ocr = ocr_future.result()
+
+    connected_players = restore_connected_players(
+        previous_payload,
+        windows,
+        verify_in_game=window_has_loaded_game_interface,
+    )
+    if connected_players is not None:
+        print(
+            f"All {len(connected_players)} known character(s) are already in game; "
+            "skipping launcher and PLAY steps.",
+            flush=True,
+        )
+        timings.update(
+            {
+                "already_connected": True,
+                "character_play_clicks_seconds": 0.0,
+                "character_play_sequence_seconds": 0.0,
+                "characters_total_seconds": 0.0,
+                "startup_buttons_clicked": 0,
+                "characters": [],
+            }
+        )
+        invitations: list[dict[str, object]] = []
+        if invite_others and not dry_run:
+            leader, invitations, invitation_timings = run_group_invitation_phase(
+                connected_players,
+                configured_leader=leader,
+                ocr=ocr,
+                chat_timeout=chat_timeout,
+                invitation_timeout=invitation_timeout,
+                post_login_delay=0.0,
+            )
+            timings.update(invitation_timings)
+        save_workflow_result(
+            output_path,
+            players=connected_players,
+            leader=leader,
+            invitations=invitations,
+            timings=timings,
+            workflow_started=workflow_started,
+        )
+        return connected_players
+
+    template = cv2.imread(str(assets_dir / "dofus-character-play-button.png"))
+    if template is None:
+        raise RuntimeError("Character PLAY button template was not found.")
 
     players: list[PlayerWindow] = []
     character_timings: list[dict[str, object]] = []
@@ -1228,18 +1388,14 @@ def login_characters(
         )
         timings.update(invitation_timings)
 
-    timings["workflow_total_seconds"] = round(time.monotonic() - workflow_started, 3)
-
-    payload = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "account_count": len(players),
-        "leader": leader,
-        "players": [asdict(player) for player in players],
-        "invitations": invitations,
-        "timings": timings,
-    }
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_workflow_result(
+        output_path,
+        players=players,
+        leader=leader,
+        invitations=invitations,
+        timings=timings,
+        workflow_started=workflow_started,
+    )
     return players
 
 

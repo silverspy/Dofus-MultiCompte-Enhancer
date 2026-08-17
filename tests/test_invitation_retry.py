@@ -233,3 +233,99 @@ def test_all_character_titles_must_be_loaded_before_invitations() -> None:
     )
 
     assert loaded == {101, 303}
+
+
+def test_connected_players_require_a_complete_title_match() -> None:
+    previous = {
+        "players": [
+            {"pseudo": "Leader", "ocr_confidence": 0.98},
+            {"pseudo": "Second", "ocr_confidence": 0.97},
+        ]
+    }
+
+    restored = dofus_character_login.restore_connected_players(
+        previous,
+        [(501, "Leader - Cra"), (502, "Second - Feca")],
+    )
+
+    assert restored is not None
+    assert [(player.pseudo, player.window_handle) for player in restored] == [
+        ("Leader", 501),
+        ("Second", 502),
+    ]
+    assert dofus_character_login.restore_connected_players(
+        previous,
+        [(501, "Leader - Cra"), (502, "Dofus")],
+    ) is None
+
+    checked: list[int] = []
+    restored_generic = dofus_character_login.restore_connected_players(
+        previous,
+        [(501, "Leader - Cra"), (502, "Dofus 3.6 - Release")],
+        verify_in_game=lambda handle: checked.append(handle) or True,
+    )
+    assert restored_generic is not None
+    assert [(player.pseudo, player.window_handle) for player in restored_generic] == [
+        ("Leader", 501),
+        ("Second", 502),
+    ]
+    assert checked == [502]
+
+
+def test_already_connected_characters_skip_every_play_step(monkeypatch, tmp_path) -> None:
+    output = tmp_path / "players.json"
+    output.write_text(
+        json.dumps(
+            {
+                "account_count": 2,
+                "leader": "Leader",
+                "players": [
+                    {"pseudo": "Leader", "ocr_confidence": 0.98},
+                    {"pseudo": "Second", "ocr_confidence": 0.97},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    invitation_calls: list[tuple[list[str], str, float]] = []
+    monkeypatch.setattr(
+        dofus_character_login,
+        "wait_for_dofus_windows",
+        lambda **_kwargs: [(501, "Leader - Cra"), (502, "Second - Feca")],
+    )
+    monkeypatch.setattr(dofus_character_login, "RapidOCR", lambda: object())
+    monkeypatch.setattr(
+        dofus_character_login.cv2,
+        "imread",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("selection template must not be loaded")
+        ),
+    )
+
+    def invite(players, *, configured_leader, post_login_delay, **_kwargs):
+        invitation_calls.append(
+            ([player.pseudo for player in players], configured_leader, post_login_delay)
+        )
+        return "Leader", [{"target": "Second", "accepted": True}], {"invite": 0.1}
+
+    monkeypatch.setattr(
+        dofus_character_login,
+        "run_group_invitation_phase",
+        invite,
+    )
+
+    players = dofus_character_login.login_characters(
+        output_path=output,
+        assets_dir=tmp_path,
+        leader="Leader",
+    )
+
+    assert [(player.pseudo, player.window_handle) for player in players] == [
+        ("Leader", 501),
+        ("Second", 502),
+    ]
+    assert invitation_calls == [(["Leader", "Second"], "Leader", 0.0)]
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["timings"]["already_connected"] is True
+    assert payload["timings"]["startup_buttons_clicked"] == 0
+    assert payload["players"][0]["window_handle"] == 501
