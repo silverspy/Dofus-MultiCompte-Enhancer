@@ -22,6 +22,7 @@ __all__ = [
     "Detection",
     "CommandResult",
     "activate_window",
+    "activate_window_fast",
     "capture_window",
     "click_screen",
     "detect_chat_bar",
@@ -52,6 +53,8 @@ VK_CONTROL = 0x11
 VK_RETURN = 0x0D
 VK_ESCAPE = 0x1B
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+FAST_ACTIVATION_TIMEOUT = 0.012
+FAST_ACTIVATION_POLL_INTERVAL = 0.001
 
 kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel32.OpenProcess.restype = wintypes.HANDLE
@@ -270,7 +273,8 @@ def list_windows_by_executable(executable_name: str) -> list[tuple[int, str]]:
     return sorted(matches, key=lambda item: item[0])
 
 
-def activate_window(hwnd: int) -> None:
+def _request_window_activation(hwnd: int) -> None:
+    """Ask Windows to foreground *hwnd* without waiting for the transition."""
     current_thread = kernel32.GetCurrentThreadId()
     target_thread = user32.GetWindowThreadProcessId(hwnd, None)
     foreground = user32.GetForegroundWindow()
@@ -290,6 +294,31 @@ def activate_window(hwnd: int) -> None:
     finally:
         for thread_id in reversed(attached_threads):
             user32.AttachThreadInput(current_thread, thread_id, False)
+
+
+def activate_window_fast(hwnd: int, timeout: float = FAST_ACTIVATION_TIMEOUT) -> None:
+    """Foreground a window with a millisecond poll, falling back if refused.
+
+    Replication switches between windows several times for every user action.
+    The regular activation helper deliberately polls every 50 ms for maximum
+    reliability; that interval is visible when multiplied by all clients.
+    Attached input normally makes the switch synchronous, so this fast path
+    returns immediately in the common case and retains the robust fallback.
+    """
+    if user32.GetForegroundWindow() == hwnd:
+        return
+    _request_window_activation(hwnd)
+    deadline = time.monotonic() + max(0.0, timeout)
+    while user32.GetForegroundWindow() != hwnd and time.monotonic() < deadline:
+        time.sleep(FAST_ACTIVATION_POLL_INTERVAL)
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    if user32.GetForegroundWindow() != hwnd:
+        activate_window(hwnd)
+
+
+def activate_window(hwnd: int) -> None:
+    _request_window_activation(hwnd)
 
     deadline = time.monotonic() + 3.0
     while user32.GetForegroundWindow() != hwnd and time.monotonic() < deadline:
