@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,8 +41,72 @@ def test_emergency_stop_requires_ctrl_q() -> None:
 def test_replication_settles_are_kept_below_one_frame() -> None:
     assert dofus_panel.BROADCAST_MOUSE_SOURCE_SETTLE < 0.010
     assert dofus_panel.BROADCAST_MOUSE_TARGET_SETTLE < 0.005
+    assert dofus_panel.BROADCAST_MOUSE_DISPATCH_SETTLE < 0.005
     assert dofus_panel.BROADCAST_KEYBOARD_SOURCE_SETTLE < 0.010
     assert dofus_panel.BROADCAST_KEYBOARD_TARGET_SETTLE < 0.005
+
+
+def test_replicated_click_is_dispatched_before_returning_to_source(monkeypatch) -> None:
+    timeline: list[tuple[str, float | int]] = []
+    panel = object.__new__(dofus_panel.DofusPanel)
+    panel.broadcast_replay_active = threading.Event()
+
+    def get_cursor(pointer) -> int:
+        point = ctypes.cast(pointer, ctypes.POINTER(dofus_panel.POINT)).contents
+        point.x = 10
+        point.y = 20
+        return 1
+
+    def get_rect(_handle, pointer) -> int:
+        rect = ctypes.cast(pointer, ctypes.POINTER(dofus_panel.wintypes.RECT)).contents
+        rect.left = 0
+        rect.top = 0
+        rect.right = 100
+        rect.bottom = 100
+        return 1
+
+    monkeypatch.setattr(dofus_panel.user32, "GetCursorPos", get_cursor)
+    monkeypatch.setattr(dofus_panel.user32, "IsWindow", lambda _handle: 1)
+    monkeypatch.setattr(dofus_panel.user32, "GetClientRect", get_rect)
+    monkeypatch.setattr(dofus_panel.user32, "ClientToScreen", lambda *_args: 1)
+    monkeypatch.setattr(
+        dofus_panel.user32,
+        "SetCursorPos",
+        lambda x, y: timeline.append(("cursor", x * 10000 + y)) or 1,
+    )
+    monkeypatch.setattr(
+        dofus_panel.user32,
+        "mouse_event",
+        lambda flag, *_args: timeline.append(("mouse", flag)),
+    )
+    monkeypatch.setattr(
+        dofus_panel,
+        "activate_window_fast",
+        lambda handle: timeline.append(("activate", handle)),
+    )
+    monkeypatch.setattr(
+        dofus_panel.time,
+        "sleep",
+        lambda duration: timeline.append(("sleep", duration)),
+    )
+
+    panel.replay_mouse_action(
+        dofus_panel.BroadcastMouseAction(
+            source=101,
+            targets=(202,),
+            ratio_x=0.5,
+            ratio_y=0.5,
+            message_id=dofus_panel.WM_LBUTTONUP,
+            mouse_data=0,
+        )
+    )
+
+    mouse_up = timeline.index(("mouse", dofus_panel.MOUSEEVENTF_LEFTUP))
+    dispatch = timeline.index(
+        ("sleep", dofus_panel.BROADCAST_MOUSE_DISPATCH_SETTLE)
+    )
+    source_activation = timeline.index(("activate", 101))
+    assert mouse_up < dispatch < source_activation
 
 
 def test_fast_activation_returns_as_soon_as_windows_switches(monkeypatch) -> None:

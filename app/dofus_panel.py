@@ -58,6 +58,7 @@ WORKFLOW_DONE_PREFIX = "__WORKFLOW_DONE__:"
 CLICK_DRAG_THRESHOLD = 4
 BROADCAST_MOUSE_SOURCE_SETTLE = 0.006
 BROADCAST_MOUSE_TARGET_SETTLE = 0.001
+BROADCAST_MOUSE_DISPATCH_SETTLE = 0.004
 BROADCAST_KEYBOARD_SOURCE_SETTLE = 0.005
 BROADCAST_KEYBOARD_TARGET_SETTLE = 0.001
 
@@ -2313,6 +2314,12 @@ class DofusPanel:
                         else MOUSEEVENTF_HWHEEL
                     )
                     user32.mouse_event(flag, 0, 0, ctypes.c_uint32(delta).value, 0)
+
+                # mouse_event queues input asynchronously. Keep this target in
+                # front until Windows has consumed the injected click; switching
+                # back immediately can otherwise deliver the final event to the
+                # source window instead.
+                time.sleep(BROADCAST_MOUSE_DISPATCH_SETTLE)
 
             if user32.IsWindow(action.source):
                 activate_window_fast(action.source)
