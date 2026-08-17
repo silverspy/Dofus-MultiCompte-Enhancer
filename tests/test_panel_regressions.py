@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 import ankama_launcher
+import chat_vision
 import dofus_panel
 import panel_settings
 
@@ -41,6 +42,39 @@ def test_replication_settles_are_kept_below_one_frame() -> None:
     assert dofus_panel.BROADCAST_MOUSE_TARGET_SETTLE < 0.005
     assert dofus_panel.BROADCAST_KEYBOARD_SOURCE_SETTLE < 0.010
     assert dofus_panel.BROADCAST_KEYBOARD_TARGET_SETTLE < 0.005
+
+
+def test_fast_activation_returns_as_soon_as_windows_switches(monkeypatch) -> None:
+    foreground = 101
+    requests: list[int] = []
+    fallbacks: list[int] = []
+
+    def request(handle: int) -> None:
+        nonlocal foreground
+        requests.append(handle)
+        foreground = handle
+
+    monkeypatch.setattr(chat_vision, "_request_window_activation", request)
+    monkeypatch.setattr(chat_vision.user32, "GetForegroundWindow", lambda: foreground)
+    monkeypatch.setattr(chat_vision, "activate_window", fallbacks.append)
+
+    chat_vision.activate_window_fast(202)
+
+    assert requests == [202]
+    assert fallbacks == []
+
+
+def test_fast_activation_keeps_robust_fallback(monkeypatch) -> None:
+    requests: list[int] = []
+    fallbacks: list[int] = []
+    monkeypatch.setattr(chat_vision, "_request_window_activation", requests.append)
+    monkeypatch.setattr(chat_vision.user32, "GetForegroundWindow", lambda: 101)
+    monkeypatch.setattr(chat_vision, "activate_window", fallbacks.append)
+
+    chat_vision.activate_window_fast(202, timeout=0.0)
+
+    assert requests == [202]
+    assert fallbacks == [202]
 
 
 def test_workflow_status_keeps_stop_hint_visible() -> None:

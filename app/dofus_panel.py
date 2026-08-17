@@ -26,7 +26,11 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 import pystray
 
 from build_version import APP_VERSION
-from chat_vision import activate_window, list_windows_by_executable
+from chat_vision import (
+    activate_window,
+    activate_window_fast,
+    list_windows_by_executable,
+)
 from localization import INPUT_NAME_EN, LANGUAGE_LABELS, TRANSLATIONS, translate
 from panel_settings import DEFAULT_CONFIG, load_json, load_panel_config, save_json
 from updater import ReleaseInfo, fetch_latest_release, is_newer_release, launch_update
@@ -53,9 +57,9 @@ MINIMUM_VISIBLE_PROFILES = 2
 WORKFLOW_DONE_PREFIX = "__WORKFLOW_DONE__:"
 CLICK_DRAG_THRESHOLD = 4
 BROADCAST_MOUSE_SOURCE_SETTLE = 0.006
-BROADCAST_MOUSE_TARGET_SETTLE = 0.003
+BROADCAST_MOUSE_TARGET_SETTLE = 0.001
 BROADCAST_KEYBOARD_SOURCE_SETTLE = 0.005
-BROADCAST_KEYBOARD_TARGET_SETTLE = 0.002
+BROADCAST_KEYBOARD_TARGET_SETTLE = 0.001
 
 
 def workflow_done_marker(exit_code: int) -> str:
@@ -2273,7 +2277,7 @@ class DofusPanel:
             for handle in action.targets:
                 if not user32.IsWindow(handle):
                     continue
-                activate_window(handle)
+                activate_window_fast(handle)
                 target_rect = wintypes.RECT()
                 if not user32.GetClientRect(handle, ctypes.byref(target_rect)):
                     continue
@@ -2311,7 +2315,7 @@ class DofusPanel:
                     user32.mouse_event(flag, 0, 0, ctypes.c_uint32(delta).value, 0)
 
             if user32.IsWindow(action.source):
-                activate_window(action.source)
+                activate_window_fast(action.source)
         finally:
             user32.SetCursorPos(original_cursor.x, original_cursor.y)
             self.broadcast_replay_active.clear()
@@ -2336,7 +2340,7 @@ class DofusPanel:
             for handle in action.targets:
                 if not user32.IsWindow(handle):
                     continue
-                activate_window(handle)
+                activate_window_fast(handle)
                 time.sleep(BROADCAST_KEYBOARD_TARGET_SETTLE)
                 for modifier in action.modifiers:
                     modifier_scan = int(user32.MapVirtualKeyW(modifier, 0))
@@ -2348,7 +2352,7 @@ class DofusPanel:
                     emit_key(modifier, modifier_scan, True)
 
             if user32.IsWindow(action.source):
-                activate_window(action.source)
+                activate_window_fast(action.source)
         finally:
             self.broadcast_replay_active.clear()
 
